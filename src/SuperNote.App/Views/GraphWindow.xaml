@@ -1,0 +1,49 @@
+<Window x:Class="SuperNote.App.Views.GraphWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="知识网络 · 关系图谱" Height="740" Width="1040"
+        WindowStartupLocation="CenterScreen"
+        FontFamily="{StaticResource AppFontFamily}">
+    <DockPanel>
+        <!-- 顶部工具条 -->
+        <Border DockPanel.Dock="Top" Padding="12,10" Background="#F7FAFD"
+                BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="0,0,0,1">
+            <StackPanel Orientation="Horizontal">
+                <Button Content="重新布局" Padding="12,6" Click="Reload_Click" />
+                <Button Content="聚焦选中" Padding="12,6" Margin="8,0,0,0" Click="Focus_Click" />
+                <Button Content="返回全图" Padding="12,6" Margin="8,0,0,0" Click="Reset_Click" />
+                <TextBlock x:Name="StatusText" VerticalAlignment="Center" Margin="16,0,0,0"
+                           Foreground="#666" Text="—" />
+            </StackPanel>
+        </Border>
+
+        <!-- 底部图例 -->
+        <Border DockPanel.Dock="Bottom" Padding="12,8" Background="#F7FAFD"
+                BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="0,1,0,0">
+            <StackPanel Orientation="Horizontal">
+                <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
+                    <Ellipse Width="10" Height="10" Fill="#0078D4" VerticalAlignment="Center" />
+                    <TextBlock Text="便签" Margin="6,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
+                    <Ellipse Width="10" Height="10" Fill="#107C10" VerticalAlignment="Center" />
+                    <TextBlock Text="文件" Margin="6,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
+                    <Ellipse Width="10" Height="10" Fill="#8764B8" VerticalAlignment="Center" />
+                    <TextBlock Text="文件夹" Margin="6,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
+                    <Ellipse Width="10" Height="10" Fill="#F7630C" VerticalAlignment="Center" />
+                    <TextBlock Text="待办" Margin="6,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBlock Text="拖动节点可微调位置；双击节点查看详情。" Foreground="#888" VerticalAlignment="Center" />
+            </StackPanel>
+        </Border>
+
+        <!-- 图谱画布 -->
+        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+            <Canvas x:Name="GraphCanvas" Background="White" Width="2000" Height="1600" />
+        </ScrollViewer>
+    </DockPanel>
+</Window>

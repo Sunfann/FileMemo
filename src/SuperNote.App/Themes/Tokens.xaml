@@ -1,0 +1,100 @@
+<!--
+  设计令牌 —— 严格对齐需求文档 4.2 / 4.3 / 4.4 章节（DeskBox 对齐版）。
+  命名保持语义化，便于随主题（浅色/深色）切换。
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+
+    <!-- ===== 品牌主色 ===== -->
+    <Color x:Key="ColorPrimary">#FF0078D4</Color>
+    <Color x:Key="ColorPrimaryHover">#FF106EBE</Color>
+    <Color x:Key="ColorPrimaryPressed">#FF005A9E</Color>
+    <Color x:Key="ColorPrimarySoft">#FFE6F2FB</Color>
+
+    <SolidColorBrush x:Key="PrimaryBrush" Color="{StaticResource ColorPrimary}" />
+    <SolidColorBrush x:Key="PrimaryHoverBrush" Color="{StaticResource ColorPrimaryHover}" />
+    <SolidColorBrush x:Key="PrimaryPressedBrush" Color="{StaticResource ColorPrimaryPressed}" />
+    <SolidColorBrush x:Key="PrimarySoftBrush" Color="{StaticResource ColorPrimarySoft}" />
+
+    <!-- ===== 语义色 ===== -->
+    <SolidColorBrush x:Key="SuccessBrush" Color="#FF107C10" />
+    <SolidColorBrush x:Key="WarningBrush" Color="#FFF7630C" />
+    <SolidColorBrush x:Key="DangerBrush" Color="#FFC42B1C" />
+    <SolidColorBrush x:Key="InfoBrush" Color="#FF0078D4" />
+
+    <!-- ===== 表面 / 文字（浅色，Solid Fallback） ===== -->
+    <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="SurfaceAltBrush" Color="#FFF7FAFD" />
+    <SolidColorBrush x:Key="BgHoverBrush" Color="#0F000000" />
+    <SolidColorBrush x:Key="BgSelectedBrush" Color="{StaticResource ColorPrimarySoft}" />
+    <SolidColorBrush x:Key="BorderBrushSoft" Color="#1A000000" />
+
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#FF1B1B1B" />
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#FF5C5C5C" />
+    <SolidColorBrush x:Key="TextTertiaryBrush" Color="#FF8A8A8A" />
+
+    <!-- ===== 字体 ===== -->
+    <FontFamily x:Key="AppFontFamily">Segoe UI Variable, Segoe UI, Microsoft YaHei UI, Microsoft YaHei, PingFang SC, Noto Sans CJK SC, sans-serif</FontFamily>
+
+    <!-- 字号阶梯 -->
+    <sys:Double x:Key="FontDisplay">28</sys:Double>
+    <sys:Double x:Key="FontH1">24</sys:Double>
+    <sys:Double x:Key="FontH2">20</sys:Double>
+    <sys:Double x:Key="FontTitle">16</sys:Double>
+    <sys:Double x:Key="FontBody">14</sys:Double>
+    <sys:Double x:Key="FontSecondary">13</sys:Double>
+    <sys:Double x:Key="FontCaption">12</sys:Double>
+    <sys:Double x:Key="FontTiny">11</sys:Double>
+
+    <!-- ===== 间距 ===== -->
+    <Thickness x:Key="PagePadding">24</Thickness>
+    <Thickness x:Key="PagePaddingCompact">16</Thickness>
+
+    <!-- ===== 圆角 ===== -->
+    <CornerRadius x:Key="RadiusContainer">12</CornerRadius>
+    <CornerRadius x:Key="RadiusCard">8</CornerRadius>
+    <CornerRadius x:Key="RadiusRow">6</CornerRadius>
+    <CornerRadius x:Key="RadiusControl">6</CornerRadius>
+    <CornerRadius x:Key="RadiusPill">999</CornerRadius>
+
+    <!-- ===== 阴影 ===== -->
+    <DropShadowEffect x:Key="ShadowPopup" BlurRadius="24" ShadowDepth="4" Direction="270" Opacity="0.16" Color="#000000" />
+    <DropShadowEffect x:Key="ShadowDialog" BlurRadius="28" ShadowDepth="8" Direction="270" Opacity="0.20" Color="#000000" />
+
+    <!-- ===== 文本样式 ===== -->
+    <Style x:Key="TextDisplay" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="{StaticResource FontDisplay}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+    </Style>
+    <Style x:Key="TextH2" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="{StaticResource FontH2}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+    </Style>
+    <Style x:Key="TextTitle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="{StaticResource FontTitle}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+    </Style>
+    <Style x:Key="TextBody" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="{StaticResource FontBody}" />
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+    </Style>
+    <Style x:Key="TextSecondary" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="{StaticResource FontSecondary}" />
+        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+    </Style>
+    <Style x:Key="TextCaption" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="{StaticResource FontCaption}" />
+        <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}" />
+    </Style>
+
+</ResourceDictionary>

@@ -1,0 +1,18 @@
+<Application x:Class="SuperNote.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ShutdownMode="OnExplicitShutdown">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/Tokens.xaml" />
+                <ResourceDictionary Source="Themes/Controls.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- 全局窗口图标：统一使用需求指定的“文件夹 + 便签”3D 图标 -->
+            <Style TargetType="{x:Type Window}">
+                <Setter Property="Icon" Value="pack://application:,,,/Assets/appicon.png" />
+            </Style>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
