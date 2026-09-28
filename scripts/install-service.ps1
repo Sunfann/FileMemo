@@ -1,10 +1,10 @@
 #requires -Version 5.1
 <#
 .SYNOPSIS
-  将 SuperNote 注册为 Windows 后台服务（需求 3.15 / 7.P2「后台服务」）。
+  将 文笺 FileMemo 注册为 Windows 后台服务（需求 3.15 / 7.P2「后台服务」）。
 
 .DESCRIPTION
-  使用 SuperNote.App.exe 的 --service 无界面模式：
+  使用 FileMemo.exe 的 --service 无界面模式：
     - 大规模文件追踪（USN Journal）
     - 网络盘 / NAS 监控
     - 开机自动索引（含图片向量索引，若已启用）
@@ -13,17 +13,17 @@
   可改用 NSSM 以获得更完善的服务包装。
 
 .PARAMETER ExePath
-  SuperNote.App.exe 的完整路径。默认为脚本上一级 src\SuperNote.App\bin 下的常见输出位置。
+  FileMemo.exe 的完整路径。默认为脚本上一级 src\FileMemo.App\bin 下的常见输出位置。
 
 .PARAMETER ServiceName
-  服务名，默认 SuperNoteBackground。
+  服务名，默认 FileMemoBackground。
 
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1 -ExePath "C:\Apps\SuperNote\SuperNote.App.exe"
+  powershell -ExecutionPolicy Bypass -File scripts\install-service.ps1 -ExePath "C:\Apps\FileMemo\FileMemo.exe"
 #>
 param(
     [string]$ExePath = "",
-    [string]$ServiceName = "SuperNoteBackground",
+    [string]$ServiceName = "FileMemoBackground",
     [switch]$Uninstall
 )
 
@@ -53,8 +53,8 @@ if ($Uninstall) {
 
 if ([string]::IsNullOrWhiteSpace($ExePath)) {
     $candidates = @(
-        (Join-Path $PSScriptRoot "..\src\SuperNote.App\bin\Release\net8.0-windows10.0.19041.0\SuperNote.App.exe"),
-        (Join-Path $PSScriptRoot "..\src\SuperNote.App\bin\Debug\net8.0-windows10.0.19041.0\SuperNote.App.exe")
+        (Join-Path $PSScriptRoot "..\src\FileMemo.App\bin\Release\net8.0-windows10.0.19041.0\FileMemo.exe"),
+        (Join-Path $PSScriptRoot "..\src\FileMemo.App\bin\Debug\net8.0-windows10.0.19041.0\FileMemo.exe")
     )
     foreach ($c in $candidates) {
         if (Test-Path $c) { $ExePath = (Resolve-Path $c).Path; break }
@@ -62,7 +62,7 @@ if ([string]::IsNullOrWhiteSpace($ExePath)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($ExePath) -or -not (Test-Path $ExePath)) {
-    throw "未找到 SuperNote.App.exe，请用 -ExePath 指定完整路径。"
+    throw "未找到 FileMemo.exe，请用 -ExePath 指定完整路径。"
 }
 
 Write-Host "使用可执行文件：$ExePath" -ForegroundColor Cyan
@@ -86,8 +86,8 @@ if ($nssm) {
     & nssm.exe start $ServiceName
 } else {
     Write-Host "未检测到 NSSM，使用 sc.exe 注册（注意：普通 GUI 程序作为服务的稳定性有限，建议安装 NSSM） ..." -ForegroundColor Yellow
-    sc.exe create $ServiceName binPath= "`"$ExePath`" --service" start= auto DisplayName= "SuperNote 后台服务" | Out-Null
-    sc.exe description $ServiceName "SuperNote 后台追踪 / 索引服务（USN Journal + 网络盘监控 + 开机索引）" | Out-Null
+    sc.exe create $ServiceName binPath= "`"$ExePath`" --service" start= auto DisplayName= "文笺 FileMemo 后台服务" | Out-Null
+    sc.exe description $ServiceName "文笺 FileMemo 后台追踪 / 索引服务（USN Journal + 网络盘监控 + 开机索引）" | Out-Null
     Start-Service -Name $ServiceName
 }
 

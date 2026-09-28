@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- 目标 Windows 10 1809+（10.0.17763）；在此 SDK 上可调用 Windows.Media.Ocr（P1 OCR）。
+         若需在更老系统运行，将下方 TFM 改回 net8.0-windows 并移除 WINDOWS_OCR 编译符号即可。 -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <!-- 启用 Windows Runtime OCR API（OcrService 用 #if WINDOWS_OCR 包裹） -->
+    <DefineConstants>$(DefineConstants);WINDOWS_OCR</DefineConstants>
+    <AssemblyName>FileMemo</AssemblyName>
+    <RootNamespace>FileMemo.App</RootNamespace>
+    <ApplicationIcon>Assets\appicon.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- WinForms 分析器提示：DPI 通过清单配置时会产生 WFAC010，此处按 WPF 惯例保留清单并抑制该警告 -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+    <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
+    <Version>0.1.0</Version>
+    <Product>文笺 FileMemo</Product>
+    <Company>文笺 FileMemo</Company>
+    <AssemblyTitle>文笺 FileMemo —— 签随文件走的超级便签</AssemblyTitle>
+    <Description>每份文件都值得一纸文笺：图文备注 · 五重指纹追踪 · 文件树 · Everything 联合搜索</Description>
+  </PropertyGroup>
+
+  <!--
+    同时启用 WPF 与 WinForms 时，SDK 会为 WinForms 注入全局 using，
+    导致 Application / MessageBox / Clipboard / TextBox 等类型与 WPF 同名冲突。
+    移除这两个隐式 using，代码中统一使用 WPF 类型（Forms 类型按需全限定）。
+  -->
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.8" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+    <PackageReference Include="Markdig" Version="0.37.0" />
+  </ItemGroup>
+
+  <!-- 应用图标 / 资源（图标 = 需求指定的“文件夹 + 便签”3D 图标；ball.png = 悬浮球主球贴图） -->
+  <ItemGroup>
+    <None Remove="Assets\appicon.png" />
+    <None Remove="Assets\ball.png" />
+    <Resource Include="Assets\appicon.png" />
+    <Resource Include="Assets\ball.png" />
+  </ItemGroup>
+
+</Project>

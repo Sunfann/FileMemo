@@ -1,13 +1,15 @@
-# 超级便签（SuperNote）— MVP
+# 文笺 FileMemo —— 签随文件走的超级便签
+
+> 每份文件都值得一纸文笺：图文备注 · 五重指纹追踪 · 文件树 · Everything 联合搜索
 
 > 在 Windows 文件系统之上，增加一层"人的上下文"。
-> 本仓库是依据《超级便签 APP 需求文档（优化整合版 v2.0）》落地的 **P0 MVP** 源码工程。
+> 本仓库是依据《文笺 FileMemo APP 需求文档（优化整合版 v2.0）》落地的 **P0 MVP** 源码工程。
 
 ---
 
 ## 一、这是什么
 
-超级便签把 **便签 / 剪贴板随记 / 待办 / 文件·文件夹备注** 统一成一套"记录（Record）"对象模型，
+文笺 FileMemo 把 **便签 / 剪贴板随记 / 待办 / 文件·文件夹备注** 统一成一套"记录（Record）"对象模型，
 并叠加 **多重指纹追踪**（文件重命名 / 移动后备注自动同步）、**文件树**、**Everything 联合搜索**、
 **资源管理器集成**、**桌面 Widget**，本地优先、离线可用。
 
@@ -34,12 +36,12 @@
 
 ```powershell
 # 1. 编译（在仓库根目录或解决方案目录均可）
-dotnet build SuperNote.sln -c Debug
+dotnet build FileMemo.sln -c Debug
 
 # 2. 运行
-dotnet run --project src\SuperNote.App -c Debug
+dotnet run --project src\FileMemo.App -c Debug
 # 或直接运行生成的可执行文件：
-#   src\SuperNote.App\bin\Debug\net8.0-windows\SuperNote.exe
+#   src\FileMemo.App\bin\Debug\net8.0-windows\FileMemo.exe
 ```
 
 首次启动会在 `%APPDATA%\SuperNote\` 下创建：
@@ -100,21 +102,21 @@ cd scripts
 | `Ctrl+Alt+N` | 快速便签 |
 | `Ctrl+Alt+V` | 剪贴板面板 |
 
-> 右键菜单亦可直接呼出：注册右键菜单脚本后，对文件/文件夹点"添加/查看超级便签"即触发备注弹窗。
+> 右键菜单亦可直接呼出：注册右键菜单脚本后，对文件/文件夹点"添加/查看文笺 FileMemo"即触发备注弹窗。
 
 ---
 
 ## 五、工程结构
 
 ```
-SuperNote/
-├─ SuperNote.sln
+FileMemo/
+├─ FileMemo.sln
 ├─ README.md
 ├─ docs/
 │   └─ roadmap.md                 # 路线图与设计决策
 ├─ scripts/
 │   └─ install-context-menu.ps1   # 右键菜单注册
-└─ src/SuperNote.App/
+└─ src/FileMemo.App/
     ├─ App.xaml(.cs)              # 入口：初始化 DB / 服务 / 托盘
     ├─ app.manifest               # Per-Monitor V2 DPI
     ├─ Models/                    # 统一对象模型 + 枚举
@@ -180,7 +182,7 @@ SuperNote/
 | 图片向量搜索 | `Services/ImageVectorService.cs` | **纯本地** 148 维特征向量（8×8 灰度 64 + 4×4×4 颜色直方图 64 + 4×4 边缘密度 16 + 全局统计 4），余弦相似度检索；**不引入任何 AI 模型或云服务** |
 | 团队协作（预留） | `Services/CollaborationService.cs` | `ICollaborationProvider` 抽象 + `LocalOnly` 本地占位 + `collab_session` 工作区 / 成员元数据模型；默认本地，不连远端 |
 | 插件系统 | `Services/PluginService.cs` | `IPlugin` / `PluginContext` / `PluginHost`；`AssemblyLoadContext`（可卸载）隔离加载，单插件失败不影响主程序；插件目录可配置 |
-| 后台服务（可选） | `Services/BackgroundServiceHost.cs` + `scripts/install-service.ps1` | `SuperNote.App.exe --service` 无界面模式：大规模 USN Journal 追踪 + 网络盘 / NAS 监控 + 开机索引（含图片向量）；脚本以管理员注册 Windows 服务（sc.exe / NSSM） |
+| 后台服务（可选） | `Services/BackgroundServiceHost.cs` + `scripts/install-service.ps1` | `FileMemo.exe --service` 无界面模式：大规模 USN Journal 追踪 + 网络盘 / NAS 监控 + 开机索引（含图片向量）；脚本以管理员注册 Windows 服务（sc.exe / NSSM） |
 
 以上 P2 开关均在**设置**面板的「P2 · 关系图谱 / 知识网络 / 图片向量 / 团队协作 / 插件系统 / 后台服务」分组中调整；
 并提供「打开知识网络」「重建向量索引」按钮。
@@ -193,7 +195,7 @@ SuperNote/
 
 **应用图标**：全应用统一为需求指定的「3D 文件夹 + 绿色便签」图标。
 - `Assets/appicon.png`（窗口图标，通过 `App.xaml` 的全局 `Window` 样式设置）
-- `Assets/appicon.ico`（EXE 可执行文件图标，`SuperNote.App.csproj` 的 `<ApplicationIcon>`）
+- `Assets/appicon.ico`（EXE 可执行文件图标，`FileMemo.App.csproj` 的 `<ApplicationIcon>`）
 
 **桌面悬浮球**（`Views/FloatingBallWindow.xaml(.cs)`，可个性化）：
 - 常驻桌面、置顶、可整窗拖动、自动记忆位置、点击空白可穿透

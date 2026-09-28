@@ -1,4 +1,4 @@
-# 超级便签 - 资源管理器右键菜单注册脚本（当前用户，无需管理员）
+# 文笺 FileMemo - 资源管理器右键菜单注册脚本（当前用户，无需管理员）
 # 用法：在 PowerShell 中执行  ./install-context-menu.ps1
 # 卸载：./install-context-menu.ps1 -Uninstall
 
@@ -6,7 +6,7 @@ param(
     [switch]$Uninstall
 )
 
-$exe = Join-Path $PSScriptRoot "..\src\SuperNote.App\bin\Debug\net8.0-windows\SuperNote.exe"
+$exe = Join-Path $PSScriptRoot "..\src\FileMemo.App\bin\Debug\net8.0-windows\FileMemo.exe"
 $exe = [System.IO.Path]::GetFullPath($exe)
 
 $keys = @(
@@ -18,7 +18,7 @@ if ($Uninstall) {
     foreach ($k in $keys) {
         if (Test-Path $k) { Remove-Item -Path $k -Recurse -Force }
     }
-    Write-Host "已移除超级便签右键菜单。" -ForegroundColor Yellow
+    Write-Host "已移除文笺 FileMemo 右键菜单。" -ForegroundColor Yellow
     exit 0
 }
 
@@ -29,7 +29,7 @@ if (-not (Test-Path $exe)) {
 
 foreach ($k in $keys) {
     New-Item -Path $k -Force | Out-Null
-    New-ItemProperty -Path $k -Name "(Default)" -Value "添加/查看超级便签" -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $k -Name "(Default)" -Value "添加/查看文笺 FileMemo" -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $k -Name "Icon" -Value $exe -PropertyType String -Force | Out-Null
 
     $cmdKey = Join-Path $k "command"
@@ -37,6 +37,6 @@ foreach ($k in $keys) {
     New-ItemProperty -Path $cmdKey -Name "(Default)" -Value "`"$exe`" --annotate `"%1`"" -PropertyType String -Force | Out-Null
 }
 
-Write-Host "已注册超级便签右键菜单（文件和文件夹）。" -ForegroundColor Green
+Write-Host "已注册文笺 FileMemo 右键菜单（文件和文件夹）。" -ForegroundColor Green
 Write-Host "可执行文件：$exe"
 Write-Host "如移动了 exe，请重新运行本脚本。"

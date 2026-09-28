@@ -1,4 +1,4 @@
-# 超级便签 · 路线图与设计决策
+# 文笺 FileMemo · 路线图与设计决策
 
 本文件记录 MVP 的实现取舍，以及通往 P1 / P2 的路径。
 
@@ -37,7 +37,7 @@
   `AssemblyLoadContext`(可卸载) 隔离加载 + `AssemblyDependencyResolver` 解析插件依赖；
   单插件失败不影响主程序；`plugin` 表记录加载状态；插件目录可配置）
 - ✅ 后台服务（`Services/BackgroundServiceHost.cs` + `scripts/install-service.ps1`，
-  `SuperNote.App.exe --service` 无界面模式：USN Journal 追踪 + 网络盘/NAS 监控 + 开机索引；
+  `FileMemo.exe --service` 无界面模式：USN Journal 追踪 + 网络盘/NAS 监控 + 开机索引；
   脚本以管理员注册 Windows 服务，优先 NSSM、回退 sc.exe）
 
 ---
@@ -88,7 +88,7 @@ Shell 扩展有限制（需稀疏包）。MVP 采用两条轻量路径先满足�
 
 ## 5. 数据模型（SQLite 表）
 
-对应需求文档第 6 章，见 `src/SuperNote.App/Data/Database.cs`：
+对应需求文档第 6 章，见 `src/FileMemo.App/Data/Database.cs`：
 
 `note_record` · `clip` · `task` · `file_ref` · `annotation` · `fingerprint`
 · `timeline` · `record_link` · `record_fts`
