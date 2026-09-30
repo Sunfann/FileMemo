@@ -321,6 +321,23 @@ public partial class FloatingNoteWindow : Window
     /// <summary>保存（不关闭），保留给需要“保存并继续编辑”的场景。</summary>
     private void Save_Click(object sender, RoutedEventArgs e) => SaveNotes();
 
+    /// <summary>
+    /// 删除当前文件 / 文件夹备注：二次确认后删除 annotation 及其伴随数据，并关闭弹窗。
+    /// 注意：不会删除磁盘上的文件本身。
+    /// </summary>
+    private void Delete_Click(object sender, RoutedEventArgs e)
+    {
+        if (_primary == null) return;
+
+        var res = MessageBox.Show(
+            $"确定删除对「{_primary.Name}」的文件备注吗？\n（不会删除文件本身，此操作不可撤销）",
+            "删除备注", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        if (res != MessageBoxResult.Yes) return;
+
+        App.Instance.Repo.DeleteAnnotation(_primary.Id);
+        Close();
+    }
+
     private bool SaveNotes()
     {
         try
@@ -356,15 +373,43 @@ public partial class FloatingNoteWindow : Window
     private void Open_Click(object sender, RoutedEventArgs e)
     {
         if (_primary == null) return;
-        try { Process.Start(new ProcessStartInfo(_primary.Path) { UseShellExecute = true }); }
+        var path = ResolveCurrentPath(_primary);
+        if (path == null)
+        {
+            MessageBox.Show("文件已被移动或删除，无法打开：\n" + _primary.Path,
+                "文件不存在", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
         catch (Exception ex) { MessageBox.Show("打开失败：" + ex.Message); }
     }
 
     private void Reveal_Click(object sender, RoutedEventArgs e)
     {
         if (_primary == null) return;
-        try { Process.Start("explorer.exe", "/select,\"" + _primary.Path + "\""); }
+        var path = ResolveCurrentPath(_primary);
+        if (path == null)
+        {
+            MessageBox.Show("文件已被移动或删除，无法定位：\n" + _primary.Path,
+                "文件不存在", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        try { Process.Start("explorer.exe", "/select,\"" + path + "\""); }
         catch (Exception ex) { MessageBox.Show("定位失败：" + ex.Message); }
+    }
+
+    /// <summary>
+    /// 取文件当前有效路径；若记录路径已失效（文件被移动/重命名），
+    /// 借助指纹找回真实路径并回写，找不到返回 null。
+    /// </summary>
+    private static string? ResolveCurrentPath(FileRef fr)
+    {
+        try
+        {
+            if (System.IO.File.Exists(fr.Path) || System.IO.Directory.Exists(fr.Path)) return fr.Path;
+            return App.Instance?.Watcher?.Reconcile(fr);
+        }
+        catch { return null; }
     }
 
     private void OpenMain_Click(object sender, RoutedEventArgs e)

@@ -59,9 +59,15 @@ public sealed class UsnChange
     public long Usn { get; set; }
     public uint Reason { get; set; }
     public string? ResolvedPath { get; set; }
+    /// <summary>解析出 ResolvedPath 之前，缓存中记录的该对象旧路径（用于文件夹移动时推算子项迁移）。</summary>
+    public string? PreviousPath { get; set; }
     public DateTime TimeUtc { get; set; } = DateTime.UtcNow;
 
     public bool IsRename => (Reason & (NativeMethodsUsn.RenameOldName | NativeMethodsUsn.RenameNewName)) != 0;
+    /// <summary>仅"新名称"记录：重命名/移动后 USN 会同时抛出旧名与新名两条记录，
+    /// 只有新名记录携带目标路径，处理路径同步时应以它为准，避免被旧名记录回退。</summary>
+    public bool IsRenameNew => (Reason & NativeMethodsUsn.RenameNewName) != 0;
+    public bool IsRenameOld => (Reason & NativeMethodsUsn.RenameOldName) != 0 && !IsRenameNew;
     public bool IsCreate => (Reason & NativeMethodsUsn.FileCreate) != 0;
     public bool IsDelete => (Reason & NativeMethodsUsn.FileDelete) != 0;
     public bool IsDataChange => (Reason & (NativeMethodsUsn.DataOverwrite | NativeMethodsUsn.DataExtend | NativeMethodsUsn.DataTruncation)) != 0;

@@ -4,8 +4,22 @@
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
         <ResourceDictionary>
+            <!--
+              合并顺序很重要：
+                1) Tokens.xaml        —— 主题无关（字体 / 字号 / 间距 / 圆角），其中颜色引用用 DynamicResource
+                2) Theme.Initial.xaml —— 首帧兜底的完整颜色令牌（默认=Mocha）。
+                                         ThemeManager.Initialize() 启动时会把这一项整体替换为
+                                         用户所选主题（靠其中的 ThemeMarker 标记键定位）。
+                3) Icons.xaml         —— 矢量图标几何
+                4) Controls.xaml      —— 控件样式（内部颜色一律 DynamicResource，才能跟随换肤）
+
+              各主题的色值定义在 Themes/ThemeCatalog.cs，
+              运行时字典由 Themes/ThemeDictionaryBuilder.cs 生成，本处第 2 项仅作启动兜底。
+            -->
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Themes/Tokens.xaml" />
+                <ResourceDictionary Source="Themes/Theme.Initial.xaml" />
+                <ResourceDictionary Source="Themes/Icons.xaml" />
                 <ResourceDictionary Source="Themes/Controls.xaml" />
             </ResourceDictionary.MergedDictionaries>
 

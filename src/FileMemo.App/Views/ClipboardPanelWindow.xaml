@@ -4,7 +4,7 @@
         Title="剪贴板随记" Height="520" Width="520"
         WindowStartupLocation="CenterScreen" Topmost="True"
         FontFamily="{StaticResource AppFontFamily}"
-        Background="{StaticResource SurfaceBrush}">
+        Background="{DynamicResource SurfaceBrush}">
     <DockPanel Margin="12">
         <TextBox x:Name="SearchBox" DockPanel.Dock="Top" Style="{StaticResource AppTextBox}"
                  Margin="0,0,0,8" TextChanged="SearchBox_TextChanged"
@@ -37,8 +37,9 @@
                                 <Run Text="{Binding CreatedAt, StringFormat='{}{0:MM-dd HH:mm:ss}'}" />
                             </TextBlock>
                         </StackPanel>
-                        <TextBlock Grid.Column="2" Text="📌" VerticalAlignment="Top"
-                                   Visibility="{Binding Pinned, Converter={StaticResource BoolToVis}}" />
+                        <Path Grid.Column="2" Style="{StaticResource IconSmall}" Data="{StaticResource IconPin}"
+                              Stroke="{DynamicResource PrimaryBrush}" VerticalAlignment="Top"
+                              Visibility="{Binding Pinned, Converter={StaticResource BoolToVis}}" />
                     </Grid>
                 </DataTemplate>
             </ListBox.ItemTemplate>

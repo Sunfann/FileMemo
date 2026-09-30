@@ -301,7 +301,9 @@ public sealed class MainViewModel : ObservableEntity
             var created = Views.AnnotationHelper.CreateOrGet(_repo, dlg.FilePath);
             Section = NavSection.Notes;
             LoadRecords();
-            SelectedRecord = Records.FirstOrDefault(r => r.IsFile && r.Annotation?.Id == created.Id);
+            // created 是 FileRef；应按 FileRef.Id 定位对应记录（原先误用 created.Id 去比 Annotation.Id）
+            SelectedRecord = Records.FirstOrDefault(r => r.IsFile && r.FileRef?.Id == created.Id)
+                             ?? Records.FirstOrDefault(r => r.IsFile && r.Annotation?.Id == _repo.GetAnnotation(created.Id)?.Id);
             StatusText = "已添加文件备注：" + dlg.FilePath;
         }
     }
@@ -355,7 +357,7 @@ public sealed class RecordRow
     public Annotation? Annotation { get; set; }
     public FileRef? FileRef { get; set; }
 
-    public string Badge => IsFile ? "📄 文件/文件夹" : "📝 便签";
+    public string Badge => IsFile ? "文件 / 文件夹" : "便签";
     public string Title => IsFile ? (FileRef?.Name ?? "(未知对象)") : (Note?.Title ?? "(无标题)");
     public string Subtitle => IsFile ? (FileRef?.Path ?? "") : (Note?.ContentMd ?? "");
     public string StateLabel => IsFile ? (Annotation?.StateLabel ?? "") : "";
@@ -387,7 +389,9 @@ public sealed class FileNode : ObservableEntity
     public string StateLabel { get; set; } = "";
     public string Tags { get; set; } = "";
     public int TaskCount { get; set; }
-    public string TaskBadge => TaskCount > 0 ? $"☑ {TaskCount}" : "";
-    public string Icon => IsDir ? "📁" : "📄";
+    /// <summary>任务数量文本（无 emoji，图标由 View 用矢量 Path 渲染）。</summary>
+    public string TaskBadge => TaskCount > 0 ? $"{TaskCount} 项待办" : "";
+    /// <summary>是否目录：View 据此在矢量图标间切换（不再返回 emoji）。</summary>
+    public bool IsDirectory => IsDir;
     public System.Collections.ObjectModel.ObservableCollection<FileNode> Children { get; } = new();
 }

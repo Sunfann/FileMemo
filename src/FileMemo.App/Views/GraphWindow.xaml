@@ -3,47 +3,70 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="知识网络 · 关系图谱" Height="740" Width="1040"
         WindowStartupLocation="CenterScreen"
-        FontFamily="{StaticResource AppFontFamily}">
+        Background="{DynamicResource WindowBackdropFallbackBrush}"
+        FontFamily="{StaticResource AppFontFamily}"
+        TextOptions.TextFormattingMode="Ideal"
+        UseLayoutRounding="True">
     <DockPanel>
         <!-- 顶部工具条 -->
-        <Border DockPanel.Dock="Top" Padding="12,10" Background="#F7FAFD"
-                BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="0,0,0,1">
+        <Border DockPanel.Dock="Top" Padding="12,10" Background="{DynamicResource SurfaceAltBrush}"
+                BorderBrush="{DynamicResource BorderBrushSoft}" BorderThickness="0,0,0,1">
             <StackPanel Orientation="Horizontal">
-                <Button Content="重新布局" Padding="12,6" Click="Reload_Click" />
-                <Button Content="聚焦选中" Padding="12,6" Margin="8,0,0,0" Click="Focus_Click" />
-                <Button Content="返回全图" Padding="12,6" Margin="8,0,0,0" Click="Reset_Click" />
+                <Button Style="{StaticResource SecondaryButton}" Click="Reload_Click">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource IconSmall}" Data="{StaticResource IconRefresh}"
+                              Stroke="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock Text="重新布局" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Button Style="{StaticResource SecondaryButton}" Margin="8,0,0,0" Click="Focus_Click">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource IconSmall}" Data="{StaticResource IconLocate}"
+                              Stroke="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock Text="聚焦选中" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Button Style="{StaticResource SecondaryButton}" Margin="8,0,0,0" Click="Reset_Click">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource IconSmall}" Data="{StaticResource IconExpand}"
+                              Stroke="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock Text="返回全图" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
                 <TextBlock x:Name="StatusText" VerticalAlignment="Center" Margin="16,0,0,0"
-                           Foreground="#666" Text="—" />
+                           Style="{StaticResource TextCaption}" Text="—" />
             </StackPanel>
         </Border>
 
         <!-- 底部图例 -->
-        <Border DockPanel.Dock="Bottom" Padding="12,8" Background="#F7FAFD"
-                BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="0,1,0,0">
+        <Border DockPanel.Dock="Bottom" Padding="12,8" Background="{DynamicResource SurfaceAltBrush}"
+                BorderBrush="{DynamicResource BorderBrushSoft}" BorderThickness="0,1,0,0">
             <StackPanel Orientation="Horizontal">
                 <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
-                    <Ellipse Width="10" Height="10" Fill="#0078D4" VerticalAlignment="Center" />
-                    <TextBlock Text="便签" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    <Ellipse Width="10" Height="10" Fill="{DynamicResource GraphLegendBrush1}" VerticalAlignment="Center" />
+                    <TextBlock Text="便签" Margin="6,0,0,0" VerticalAlignment="Center" Style="{StaticResource TextCaption}" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
-                    <Ellipse Width="10" Height="10" Fill="#107C10" VerticalAlignment="Center" />
-                    <TextBlock Text="文件" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    <Ellipse Width="10" Height="10" Fill="{DynamicResource GraphLegendBrush2}" VerticalAlignment="Center" />
+                    <TextBlock Text="文件" Margin="6,0,0,0" VerticalAlignment="Center" Style="{StaticResource TextCaption}" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
-                    <Ellipse Width="10" Height="10" Fill="#8764B8" VerticalAlignment="Center" />
-                    <TextBlock Text="文件夹" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    <Ellipse Width="10" Height="10" Fill="{DynamicResource GraphLegendBrush3}" VerticalAlignment="Center" />
+                    <TextBlock Text="文件夹" Margin="6,0,0,0" VerticalAlignment="Center" Style="{StaticResource TextCaption}" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
-                    <Ellipse Width="10" Height="10" Fill="#F7630C" VerticalAlignment="Center" />
-                    <TextBlock Text="待办" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    <Ellipse Width="10" Height="10" Fill="{DynamicResource GraphLegendBrush4}" VerticalAlignment="Center" />
+                    <TextBlock Text="待办" Margin="6,0,0,0" VerticalAlignment="Center" Style="{StaticResource TextCaption}" />
                 </StackPanel>
-                <TextBlock Text="拖动节点可微调位置；双击节点查看详情。" Foreground="#888" VerticalAlignment="Center" />
+                <TextBlock Text="拖动节点可微调位置；右键节点聚焦邻域；双击节点查看详情。"
+                           Style="{StaticResource TextCaption}" VerticalAlignment="Center" />
             </StackPanel>
         </Border>
 
-        <!-- 图谱画布 -->
+        <!-- 图谱画布：底色跟随主题（深色下不再是刺眼白底） -->
         <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-            <Canvas x:Name="GraphCanvas" Background="White" Width="2000" Height="1600" />
+            <Canvas x:Name="GraphCanvas" Width="2000" Height="1600"
+                    Background="{DynamicResource GraphCanvasBrush}" />
         </ScrollViewer>
     </DockPanel>
 </Window>

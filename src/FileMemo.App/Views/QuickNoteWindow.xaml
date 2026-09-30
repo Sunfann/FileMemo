@@ -6,9 +6,9 @@
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ShowInTaskbar="False" FontFamily="{StaticResource AppFontFamily}">
     <!-- 全局快捷键呼出的 Acrylic 浮层（此处用半透明纯色 + 阴影，Win10 友好降级） -->
-    <Border Background="#F2FFFFFF" CornerRadius="12" Padding="16"
-            BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1"
-            Effect="{StaticResource ShadowPopup}">
+    <Border Background="{DynamicResource FloatSurfaceBrush}" CornerRadius="{StaticResource RadiusOverlay}" Padding="16"
+            BorderBrush="{DynamicResource BorderBrushSoft}" BorderThickness="{StaticResource BorderThin}"
+            Effect="{DynamicResource ShadowPopup}">
         <DockPanel>
             <TextBlock DockPanel.Dock="Top" Text="快速便签" Style="{StaticResource TextTitle}" Margin="0,0,0,8" />
             <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
@@ -17,7 +17,7 @@
             </StackPanel>
             <TextBox x:Name="ContentBox" AcceptsReturn="True" TextWrapping="Wrap"
                      VerticalScrollBarVisibility="Auto" Padding="10"
-                     BorderBrush="{StaticResource BorderBrushSoft}"
+                     BorderBrush="{DynamicResource BorderBrushSoft}"
                      FontSize="{StaticResource FontBody}" />
         </DockPanel>
     </Border>

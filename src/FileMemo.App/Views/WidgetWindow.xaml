@@ -7,19 +7,34 @@
         ShowInTaskbar="False" FontFamily="{StaticResource AppFontFamily}"
         MouseLeftButtonDown="Window_MouseLeftButtonDown">
     <!-- 独立桌面悬浮窗：可拖拽、置顶、贴边、折叠（需求 3.8） -->
-    <Border Background="#F2FFFFFF" CornerRadius="12" Padding="14"
-            BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1"
-            Effect="{StaticResource ShadowPopup}">
+    <Border Background="{DynamicResource FloatSurfaceBrush}" CornerRadius="{StaticResource RadiusOverlay}" Padding="14"
+            BorderBrush="{DynamicResource BorderBrushSoft}" BorderThickness="{StaticResource BorderThin}"
+            Effect="{DynamicResource ShadowPopup}">
         <DockPanel>
             <Grid DockPanel.Dock="Top" Margin="0,0,0,10">
-                <TextBlock Text="桌面速览" Style="{StaticResource TextTitle}" />
-                <Button Content="✕" HorizontalAlignment="Right" Style="{StaticResource TextButton}"
-                        Width="28" Padding="0" Click="Close_Click" />
+                <TextBlock Text="桌面速览" Style="{StaticResource TextTitle}" VerticalAlignment="Center" />
+                <Button HorizontalAlignment="Right" Style="{StaticResource CaptionButton}"
+                        Width="30" Height="28" Click="Close_Click" ToolTip="关闭">
+                    <Path Style="{StaticResource IconSmall}" Data="{StaticResource IconClose}"
+                          Stroke="{DynamicResource TextPrimaryBrush}" />
+                </Button>
             </Grid>
 
             <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,10,0,0">
-                <Button Content="＋ 快速便签" Style="{StaticResource PrimaryButton}" Click="QuickNote_Click" />
-                <Button Content="剪贴板" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0" Click="Clipboard_Click" />
+                <Button Style="{StaticResource PrimaryButton}" Click="QuickNote_Click">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource IconSmall}" Data="{StaticResource IconPlus}"
+                              Stroke="{DynamicResource TextOnPrimaryBrush}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock Text="快速便签" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Button Style="{StaticResource SecondaryButton}" Margin="8,0,0,0" Click="Clipboard_Click">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource IconSmall}" Data="{StaticResource IconClipboard}"
+                              Stroke="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock Text="剪贴板" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
             </StackPanel>
 
             <ScrollViewer VerticalScrollBarVisibility="Auto">

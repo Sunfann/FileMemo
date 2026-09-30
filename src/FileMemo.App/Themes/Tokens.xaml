@@ -1,100 +1,125 @@
 <!--
-  设计令牌 —— 严格对齐需求文档 4.2 / 4.3 / 4.4 章节（DeskBox 对齐版）。
-  命名保持语义化，便于随主题（浅色/深色）切换。
+  设计令牌（主题无关部分）—— 严格对齐 design.md（DeskBox v1.5.5 规范）。
+
+  ★ 本文件只放「不随主题变化」的令牌：字体、字号阶梯、间距、圆角、动效。
+    颜色 / 画刷 / 阴影一律由主题系统提供：
+      · 色值定义在 ThemeCatalog.cs（内置主题，DeskBoxDark / DeskBoxLight 为复刻规范）
+      · 启动兜底在 Theme.Initial.xaml
+      · 运行时字典由 ThemeDictionaryBuilder.cs 生成，并由 ThemeManager 整体替换
+    引用方式：字体 / 圆角 / 图标几何用 StaticResource，颜色一律 DynamicResource。
 -->
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
 
-    <!-- ===== 品牌主色 ===== -->
-    <Color x:Key="ColorPrimary">#FF0078D4</Color>
-    <Color x:Key="ColorPrimaryHover">#FF106EBE</Color>
-    <Color x:Key="ColorPrimaryPressed">#FF005A9E</Color>
-    <Color x:Key="ColorPrimarySoft">#FFE6F2FB</Color>
+    <!-- ===== 字体族 ===== -->
+    <!-- design.md 2.1：界面默认 Segoe UI Variable Text（Win11）→ Segoe UI（Win10 回退），中文优先微软雅黑 -->
+    <FontFamily x:Key="AppFontFamily">Segoe UI Variable Text, Microsoft YaHei UI, Segoe UI, Microsoft YaHei, PingFang SC, Noto Sans CJK SC, sans-serif</FontFamily>
+    <!-- 菜单 / 界面强制中文优先（design.md：DeskBoxMenuFontFamily 雅黑优先） -->
+    <FontFamily x:Key="MenuFontFamily">Microsoft YaHei UI, Segoe UI Variable, Segoe UI, sans-serif</FontFamily>
+    <!-- 数字 / 等宽场景（路径、指纹、时间） -->
+    <FontFamily x:Key="MonoFontFamily">Cascadia Mono, Microsoft YaHei UI, Consolas, monospace</FontFamily>
 
-    <SolidColorBrush x:Key="PrimaryBrush" Color="{StaticResource ColorPrimary}" />
-    <SolidColorBrush x:Key="PrimaryHoverBrush" Color="{StaticResource ColorPrimaryHover}" />
-    <SolidColorBrush x:Key="PrimaryPressedBrush" Color="{StaticResource ColorPrimaryPressed}" />
-    <SolidColorBrush x:Key="PrimarySoftBrush" Color="{StaticResource ColorPrimarySoft}" />
+    <!-- ===== 字号阶梯（design.md 2.2 排版层级） ===== -->
+    <sys:Double x:Key="FontDisplay">28</sys:Double>   <!-- 页面大标题（设置页标题） -->
+    <sys:Double x:Key="FontH1">18</sys:Double>        <!-- 区块标题（原 24，降为 DeskBox 18） -->
+    <sys:Double x:Key="FontH2">15</sys:Double>        <!-- 设置子标题 / 小标题（原 20，降为 15） -->
+    <sys:Double x:Key="FontTitle">14</sys:Double>     <!-- 控件/卡片标题（design.md WidgetTitleTextSize=14） -->
+    <sys:Double x:Key="FontBody">14</sys:Double>      <!-- 正文 / 设置项标题（WidgetBodyTextSize=14） -->
+    <sys:Double x:Key="FontSecondary">13</sys:Double> <!-- 次级正文 -->
+    <sys:Double x:Key="FontMenu">13</sys:Double>      <!-- 菜单项（design.md DeskBoxMenuItemFontSize=13） -->
+    <sys:Double x:Key="FontCaption">12</sys:Double>   <!-- 说明/辅助文字（WidgetCaptionTextSize=12） -->
+    <sys:Double x:Key="FontTiny">11</sys:Double>      <!-- 小标签 / 元信息（11 / 11.5） -->
 
-    <!-- ===== 语义色 ===== -->
-    <SolidColorBrush x:Key="SuccessBrush" Color="#FF107C10" />
-    <SolidColorBrush x:Key="WarningBrush" Color="#FFF7630C" />
-    <SolidColorBrush x:Key="DangerBrush" Color="#FFC42B1C" />
-    <SolidColorBrush x:Key="InfoBrush" Color="#FF0078D4" />
+    <!-- ===== 间距（design.md 3.1 四档令牌：4 / 8 / 12 / 16）===== -->
+    <sys:Double x:Key="SpacingXSmall">4</sys:Double>
+    <sys:Double x:Key="SpacingSmall">8</sys:Double>
+    <sys:Double x:Key="SpacingMedium">12</sys:Double>
+    <sys:Double x:Key="SpacingLarge">16</sys:Double>
 
-    <!-- ===== 表面 / 文字（浅色，Solid Fallback） ===== -->
-    <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFFFF" />
-    <SolidColorBrush x:Key="SurfaceAltBrush" Color="#FFF7FAFD" />
-    <SolidColorBrush x:Key="BgHoverBrush" Color="#0F000000" />
-    <SolidColorBrush x:Key="BgSelectedBrush" Color="{StaticResource ColorPrimarySoft}" />
-    <SolidColorBrush x:Key="BorderBrushSoft" Color="#1A000000" />
-
-    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#FF1B1B1B" />
-    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#FF5C5C5C" />
-    <SolidColorBrush x:Key="TextTertiaryBrush" Color="#FF8A8A8A" />
-
-    <!-- ===== 字体 ===== -->
-    <FontFamily x:Key="AppFontFamily">Segoe UI Variable, Segoe UI, Microsoft YaHei UI, Microsoft YaHei, PingFang SC, Noto Sans CJK SC, sans-serif</FontFamily>
-
-    <!-- 字号阶梯 -->
-    <sys:Double x:Key="FontDisplay">28</sys:Double>
-    <sys:Double x:Key="FontH1">24</sys:Double>
-    <sys:Double x:Key="FontH2">20</sys:Double>
-    <sys:Double x:Key="FontTitle">16</sys:Double>
-    <sys:Double x:Key="FontBody">14</sys:Double>
-    <sys:Double x:Key="FontSecondary">13</sys:Double>
-    <sys:Double x:Key="FontCaption">12</sys:Double>
-    <sys:Double x:Key="FontTiny">11</sys:Double>
-
-    <!-- ===== 间距 ===== -->
+    <!-- ===== 内边距（面板 / 页面，保持 WPF 的 Thickness 语义） ===== -->
     <Thickness x:Key="PagePadding">24</Thickness>
     <Thickness x:Key="PagePaddingCompact">16</Thickness>
+    <Thickness x:Key="PanelPadding">16</Thickness>
+    <Thickness x:Key="SectionPadding">16</Thickness>
 
-    <!-- ===== 圆角 ===== -->
-    <CornerRadius x:Key="RadiusContainer">12</CornerRadius>
-    <CornerRadius x:Key="RadiusCard">8</CornerRadius>
-    <CornerRadius x:Key="RadiusRow">6</CornerRadius>
-    <CornerRadius x:Key="RadiusControl">6</CornerRadius>
-    <CornerRadius x:Key="RadiusPill">999</CornerRadius>
+    <!-- ===== 圆角（design.md 4.1 三档核心 4 / 6 / 8 + 浮层 8） ===== -->
+    <CornerRadius x:Key="RadiusSmall">4</CornerRadius>      <!-- 小元素 / 标签 / 徽章 / 进度条 -->
+    <CornerRadius x:Key="RadiusRow">6</CornerRadius>        <!-- 列表行 -->
+    <CornerRadius x:Key="RadiusControl">6</CornerRadius>    <!-- 按钮 / 输入框 -->
+    <CornerRadius x:Key="RadiusCard">6</CornerRadius>       <!-- 卡片（design.md 卡片=6，非 8） -->
+    <CornerRadius x:Key="RadiusOverlay">8</CornerRadius>    <!-- 浮层 / 弹窗 / Tooltip / 内联编辑器 -->
+    <CornerRadius x:Key="RadiusContainer">8</CornerRadius>  <!-- 窗口容器 / 大面板 -->
+    <CornerRadius x:Key="RadiusPill">999</CornerRadius>     <!-- 胶囊（完全圆） -->
 
-    <!-- ===== 阴影 ===== -->
-    <DropShadowEffect x:Key="ShadowPopup" BlurRadius="24" ShadowDepth="4" Direction="270" Opacity="0.16" Color="#000000" />
-    <DropShadowEffect x:Key="ShadowDialog" BlurRadius="28" ShadowDepth="8" Direction="270" Opacity="0.20" Color="#000000" />
+    <!-- ===== 边框厚度（design.md 4.5：低透明描边，0.8 / 1.2 / 1.6） ===== -->
+    <!-- 必须是 Thickness 类型：Border.BorderThickness 不接受 Double 资源（字面量才走类型转换器） -->
+    <Thickness x:Key="BorderThin">0.8</Thickness>
+    <Thickness x:Key="BorderMedium">1.2</Thickness>
+    <Thickness x:Key="BorderThick">1.6</Thickness>
 
-    <!-- ===== 文本样式 ===== -->
+    <!-- ===== 动效节奏（design.md 5.1：Fluent 原生 83 / 167 / 250 ms） ===== -->
+    <sys:Double x:Key="MotionFasterMilliseconds">83</sys:Double>
+    <sys:Double x:Key="MotionFastMilliseconds">167</sys:Double>
+    <sys:Double x:Key="MotionNormalMilliseconds">250</sys:Double>
+
+    <!-- ===== 控件尺寸（design.md 4.2 / 3.3） ===== -->
+    <sys:Double x:Key="ControlHeight">34</sys:Double>         <!-- 标准按钮 / 输入框高度 -->
+    <sys:Double x:Key="ControlHeightCompact">32</sys:Double>  <!-- 紧凑控件 -->
+    <sys:Double x:Key="CaptionButtonWidth">46</sys:Double>
+    <sys:Double x:Key="CaptionButtonHeight">32</sys:Double>
+
+    <!-- ===== 品牌渐变（保留：蓝→紫→蓝 强调色带，用于点缀而非主色） ===== -->
+    <LinearGradientBrush x:Key="BrandGradientBrush" StartPoint="0,0" EndPoint="1,0">
+        <GradientStop Color="#0078D4" Offset="0" />
+        <GradientStop Color="#8764B8" Offset="0.5" />
+        <GradientStop Color="#0078D4" Offset="1" />
+    </LinearGradientBrush>
+
+    <!-- ===== 文本样式（design.md 2.2 层级对照表） ===== -->
     <Style x:Key="TextDisplay" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
         <Setter Property="FontSize" Value="{StaticResource FontDisplay}" />
         <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+    </Style>
+    <Style x:Key="TextH1" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="{StaticResource FontH1}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
     </Style>
     <Style x:Key="TextH2" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
         <Setter Property="FontSize" Value="{StaticResource FontH2}" />
         <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
     </Style>
     <Style x:Key="TextTitle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
         <Setter Property="FontSize" Value="{StaticResource FontTitle}" />
         <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
     </Style>
     <Style x:Key="TextBody" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
         <Setter Property="FontSize" Value="{StaticResource FontBody}" />
-        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+    </Style>
+    <Style x:Key="TextMenu" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource MenuFontFamily}" />
+        <Setter Property="FontSize" Value="{StaticResource FontMenu}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
     </Style>
     <Style x:Key="TextSecondary" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
         <Setter Property="FontSize" Value="{StaticResource FontSecondary}" />
-        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
     </Style>
     <Style x:Key="TextCaption" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
         <Setter Property="FontSize" Value="{StaticResource FontCaption}" />
-        <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextTertiaryBrush}" />
     </Style>
 
 </ResourceDictionary>

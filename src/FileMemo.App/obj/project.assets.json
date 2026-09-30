@@ -419,11 +419,11 @@
   "project": {
     "version": "0.1.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\sfann\\Desktop\\SuperNote\\FileMemo\\FileMemo\\src\\FileMemo.App\\FileMemo.App.csproj",
+      "projectUniqueName": "C:\\Users\\sfann\\Desktop\\新建文件夹\\src\\FileMemo.App\\FileMemo.App.csproj",
       "projectName": "FileMemo",
-      "projectPath": "C:\\Users\\sfann\\Desktop\\SuperNote\\FileMemo\\FileMemo\\src\\FileMemo.App\\FileMemo.App.csproj",
+      "projectPath": "C:\\Users\\sfann\\Desktop\\新建文件夹\\src\\FileMemo.App\\FileMemo.App.csproj",
       "packagesPath": "C:\\Users\\sfann\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\sfann\\Desktop\\SuperNote\\FileMemo\\FileMemo\\src\\FileMemo.App\\obj\\",
+      "outputPath": "C:\\Users\\sfann\\Desktop\\新建文件夹\\src\\FileMemo.App\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\sfann\\AppData\\Roaming\\NuGet\\NuGet.Config"

@@ -1,0 +1,25 @@
+<Window x:Class="FileMemo.App.Views.QuickTaskWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="快速待办" Height="200" Width="440"
+        WindowStartupLocation="CenterScreen" Topmost="True"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ShowInTaskbar="False" FontFamily="{StaticResource AppFontFamily}">
+    <!-- 悬浮图标「待办」单击呼出的快速待办录入框（Ctrl+Enter 保存 / Esc 关闭） -->
+    <Border Background="{DynamicResource FloatSurfaceBrush}" CornerRadius="{StaticResource RadiusOverlay}" Padding="16"
+            BorderBrush="{DynamicResource BorderBrushSoft}" BorderThickness="{StaticResource BorderThin}"
+            Effect="{DynamicResource ShadowPopup}">
+        <DockPanel>
+            <TextBlock DockPanel.Dock="Top" Text="快速待办" Style="{StaticResource TextTitle}" Margin="0,0,0,8" />
+            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+                <Button Content="关闭 (Esc)" Style="{StaticResource SecondaryButton}" Click="Close_Click" />
+                <Button Content="添加" Style="{StaticResource PrimaryButton}" Margin="8,0,0,0" Click="Add_Click" />
+            </StackPanel>
+            <TextBox x:Name="TitleBox" Padding="10" Height="84" AcceptsReturn="True" TextWrapping="Wrap"
+                     VerticalScrollBarVisibility="Auto"
+                     BorderBrush="{DynamicResource BorderBrushSoft}"
+                     FontSize="{StaticResource FontBody}"
+                     ToolTip="输入待办内容，Ctrl+Enter 保存" />
+        </DockPanel>
+    </Border>
+</Window>

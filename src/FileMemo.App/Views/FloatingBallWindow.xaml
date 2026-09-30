@@ -4,7 +4,9 @@
         Title="文笺 FileMemo 悬浮球"
         WindowStyle="None" AllowsTransparency="True" Background="{x:Null}"
         Topmost="True" ShowInTaskbar="False" ResizeMode="NoResize"
-        Width="220" Height="220" FontFamily="{StaticResource AppFontFamily}">
-    <!-- Canvas 无背景 → 仅绘制的球体参与命中测试，空白处点击可穿透 -->
-    <Canvas x:Name="Stage" Width="220" Height="220" Background="{x:Null}" />
+        Width="240" Height="240" FontFamily="{StaticResource AppFontFamily}">
+    <!-- 画布无背景 → 仅绘制的球体 / 光环 / 卫星 / 控制点参与命中测试，空白处点击可穿透。
+         240×240 可容纳：主球（38~56）+ 光环轨道（半径 92）+ 卫星（~26）+ 光晕 / 波纹 / 外阴影，
+         并留出「贴边 → 滑出」的整体位移余量。 -->
+    <Canvas x:Name="Stage" Width="240" Height="240" Background="{x:Null}" />
 </Window>

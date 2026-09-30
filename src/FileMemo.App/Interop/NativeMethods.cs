@@ -137,6 +137,145 @@ internal static class NativeMethods
         catch { return null; }
     }
 
+    /// <summary>
+    /// 通过 File ID 打开文件/目录句柄（OpenFileById）。
+    /// USN Journal 只给出「父目录 FRN」，当其不在缓存中时需要靠本 API 反查出父目录的真实路径，
+    /// 否则无法把重命名/移动后的子项路径拼接正确。
+    /// </summary>
+    public static IntPtr OpenByFileId(string volumeHint, long fileId)
+    {
+        if (string.IsNullOrWhiteSpace(volumeHint)) return INVALID_HANDLE_VALUE;
+
+        // 关键修复（原先 File ID 反查恒失败）：
+        //   1) 打开「卷」必须带 FILE_FLAG_BACKUP_SEMANTICS，否则 CreateFile 对目录/卷根一定失败，
+        //      OpenFileById 拿不到有效卷句柄 → 返回 INVALID，File ID 反查、USN 父目录解析全部失效，
+        //      表现为「文件移动后备注丢失、只有移回原路径才恢复」。
+        //   2) 卷句柄优先用卷 GUID 设备路径（形如 \\?\Volume{guid}\），盘符被复用也不受影响；
+        //      其次尝试标准卷句柄 \\.\C:，最后退回原始盘符根 C:\。
+        foreach (var hint in VolumeHandleCandidates(volumeHint))
+        {
+            IntPtr hv = CreateFile(hint, 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                IntPtr.Zero, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, IntPtr.Zero);
+            if (hv == INVALID_HANDLE_VALUE) continue;
+            try
+            {
+                var fid = new FILE_ID_DESCRIPTOR
+                {
+                    dwSize = (uint)Marshal.SizeOf<FILE_ID_DESCRIPTOR>(),
+                    Type = 0,          // FileIdType
+                    FileId = fileId
+                };
+                IntPtr h = OpenFileById(hv, ref fid, 0,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                    IntPtr.Zero, FILE_FLAG_BACKUP_SEMANTICS);
+                if (h != INVALID_HANDLE_VALUE) return h;   // 命中，返回文件/目录句柄
+            }
+            finally { CloseHandle(hv); }
+        }
+        return INVALID_HANDLE_VALUE;
+    }
+
+    /// <summary>
+    /// 生成用于 OpenFileById 的「卷句柄候选路径」，按可靠性排序并去重：
+    ///   卷 GUID 设备路径 → \\.\C: → C:\。volumeHint 可以是卷 GUID（\\?\Volume{...}\）或盘符根（C:\）。
+    /// </summary>
+    private static IEnumerable<string> VolumeHandleCandidates(string volumeHint)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var list = new List<string>();
+
+        void Add(string? s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return;
+            var v = s!.Trim();
+            if (v.Length == 0) return;
+            if (seen.Add(v)) list.Add(v);
+        }
+
+        var hint = volumeHint.Trim();
+
+        // 1) 已是卷 GUID 设备路径：必须以反斜杠结尾（\\?\Volume{guid}\）
+        if (hint.StartsWith(@"\\?\Volume", StringComparison.OrdinalIgnoreCase))
+            Add(hint.TrimEnd('\\') + "\\");
+
+        // 2) 盘符根 C:\ → 推导卷句柄 \\.\C:
+        if (hint.Length >= 2 && hint[1] == ':')
+        {
+            var letter = char.ToUpperInvariant(hint[0]);
+            Add($@"\\.\{letter}:");
+            Add($@"{letter}:\");
+        }
+
+        // 3) 原样兜底
+        Add(hint);
+
+        return list;
+    }
+
+    /// <summary>由文件/目录句柄取 NTFS File ID（低 64 位）。</summary>
+    public static long? GetFileIdFromHandle(IntPtr h)
+    {
+        if (h == INVALID_HANDLE_VALUE) return null;
+        if (!GetFileInformationByHandle(h, out var info)) return null;
+        return ((long)info.FileIndexHigh << 32) | info.FileIndexLow;
+    }
+
+    /// <summary>
+    /// 打开一个目录并返回其父目录的 File ID（用于向上递归拼路径）。
+    /// 取不到时返回 null。
+    /// </summary>
+    public static long? GetFileId(string path)
+    {
+        IntPtr h = CreateFile(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            IntPtr.Zero, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, IntPtr.Zero);
+        if (h == INVALID_HANDLE_VALUE) return null;
+        try { return GetFileIdFromHandle(h); }
+        finally { CloseHandle(h); }
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    public struct FILE_ID_DESCRIPTOR
+    {
+        [FieldOffset(0)] public uint dwSize;
+        [FieldOffset(4)] public int Type;       // 0=FileIdType
+        [FieldOffset(8)] public long FileId;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr OpenFileById(
+        IntPtr hVolumeHint, ref FILE_ID_DESCRIPTOR lpFileId, uint dwDesiredAccess,
+        uint dwShareMode, IntPtr lpSecurityAttributes, uint dwFlagsAndAttributes);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    public static extern uint GetFinalPathNameByHandle(
+        IntPtr hFile, StringBuilder lpszFilePath, uint cchFilePath, uint dwFlags);
+
+    private const uint FILE_NAME_NORMALIZED = 0x0;
+    private const uint VOLUME_NAME_DOS = 0x0;
+
+    /// <summary>由句柄取规范化后的 DOS 路径（\\?\ 前缀会被去掉）。失败返回 null。</summary>
+    public static string? GetPathFromHandle(IntPtr h)
+    {
+        if (h == INVALID_HANDLE_VALUE) return null;
+        try
+        {
+            var sb = new StringBuilder(1024);
+            uint n = GetFinalPathNameByHandle(h, sb, (uint)sb.Capacity, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+            if (n == 0) return null;
+            if (n > sb.Capacity)
+            {
+                sb = new StringBuilder((int)n + 1);
+                n = GetFinalPathNameByHandle(h, sb, (uint)sb.Capacity, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+                if (n == 0) return null;
+            }
+            var p = sb.ToString();
+            if (p.StartsWith(@"\\?\UNC\", StringComparison.Ordinal)) return @"\\" + p.Substring(8);
+            if (p.StartsWith(@"\\?\", StringComparison.Ordinal)) return p.Substring(4);
+            return p;
+        }
+        catch { return null; }
+    }
+
     // ==================================================================
     //  桌面（Progman / WorkerW → SHELLDLL_DefView → SysListView32）选中项
     //  桌面不在 Shell.Application.Windows() 集合里，也不能稳定依赖

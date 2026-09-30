@@ -381,6 +381,60 @@ public sealed partial class Repository
         return r.Read() ? MapFileRef(r) : null;
     }
 
+    /// <summary>
+    /// 列出所有路径位于 <paramref name="dirPath"/> 之下的文件引用（不含目录自身）。
+    /// 用于「文件夹被重命名 / 移动」时把备注批量跟随到新路径（需求：备注随文件夹转移而转移）。
+    /// </summary>
+    public List<FileRef> GetFileRefsUnder(string dirPath)
+    {
+        var list = new List<FileRef>();
+        if (string.IsNullOrWhiteSpace(dirPath)) return list;
+        var prefix = dirPath.TrimEnd('\\', '/');
+        using var c = _db.Open();
+        using var cmd = c.CreateCommand();
+        // 路径以「父目录 + 分隔符」开头即视为其子项。
+        // SQLite 的 LIKE 对 ASCII 默认大小写不敏感，足以兼容盘符/目录大小写差异。
+        // 注意 ESCAPE '\' 下：字面反斜杠需写成 \\，通配符仍是 %。故模式 = 转义后的前缀 + \\ + %
+        cmd.CommandText = "SELECT * FROM file_ref WHERE path LIKE $q ESCAPE '\\';";
+        AddParam(cmd, "$q", EscapeLike(prefix) + "\\\\%");
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            var fr = MapFileRef(r);
+            if (string.Equals(fr.Path.TrimEnd('\\', '/'), prefix, StringComparison.OrdinalIgnoreCase)) continue;
+            list.Add(fr);
+        }
+        return list;
+    }
+
+    /// <summary>转义 LIKE 模式中的通配符（配合 ESCAPE '\'），避免路径里的 % / _ / \ 被当成通配。</summary>
+    private static string EscapeLike(string s) =>
+        s.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+
+    /// <summary>
+    /// 把某个目录下的所有文件引用路径从 <paramref name="oldDir"/> 前缀改写为 <paramref name="newDir"/>。
+    /// 备注通过 file_ref_id 关联（FileRef.Id 不变），因此仅改路径即可让备注"跟随文件夹移动"。
+    /// 返回被改写的条目数。
+    /// </summary>
+    public int RebindPathPrefix(string oldDir, string newDir)
+    {
+        if (string.IsNullOrWhiteSpace(oldDir) || string.IsNullOrWhiteSpace(newDir)) return 0;
+        var oldPrefix = oldDir.TrimEnd('\\', '/');
+        var newPrefix = newDir.TrimEnd('\\', '/');
+        if (string.Equals(oldPrefix, newPrefix, StringComparison.OrdinalIgnoreCase)) return 0;
+
+        int changed = 0;
+        foreach (var fr in GetFileRefsUnder(oldPrefix))
+        {
+            var rel = fr.Path.Substring(oldPrefix.Length).TrimStart('\\', '/');
+            fr.Path = newPrefix + "\\" + rel;
+            fr.LastSeen = DateTime.Now;
+            UpsertFileRef(fr);
+            changed++;
+        }
+        return changed;
+    }
+
     public List<FileRef> FindByFileId(string? volumeGuid, long? fileId)
     {
         var list = new List<FileRef>();
@@ -539,6 +593,54 @@ public sealed partial class Repository
         AddParam(cmd, "$vc", a.VersionChain);
         AddParam(cmd, "$ocr", a.OcrText);
         cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// 删除某个文件 / 文件夹的备注（含伴随数据）。
+    /// 用于「文件备注删除」功能：移除 annotation 本体，同时清理其时间线、sidecar 记录
+    /// 与双向链接，避免残留孤儿数据。
+    ///
+    /// 注意：file_ref 与 fingerprint 予以保留——它们描述文件本身，
+    /// 既不影响列表与文件树（两者均由 annotation 驱动），又能在重新添加备注时被复用。
+    /// 返回：是否确实删除了 annotation（未命中返回 false）。
+    /// </summary>
+    public bool DeleteAnnotation(string fileRefId)
+    {
+        if (string.IsNullOrWhiteSpace(fileRefId)) return false;
+
+        using var c = _db.Open();
+        using var tx = c.BeginTransaction();
+
+        int affected;
+        using (var delAnn = c.CreateCommand())
+        {
+            delAnn.Transaction = tx;
+            delAnn.CommandText = "DELETE FROM annotation WHERE file_ref_id=$fr;";
+            AddParam(delAnn, "$fr", fileRefId);
+            affected = delAnn.ExecuteNonQuery();
+        }
+
+        // 伴随数据：时间线 / sidecar / 双向链接（表可能不存在时忽略）
+        foreach (var sql in new[]
+                 {
+                     "DELETE FROM timeline WHERE object_id=$fr;",
+                     "DELETE FROM sidecar WHERE file_ref_id=$fr;",
+                     "DELETE FROM record_link WHERE from_record_id=$fr OR to_record_id=$fr;"
+                 })
+        {
+            try
+            {
+                using var cmd = c.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = sql;
+                AddParam(cmd, "$fr", fileRefId);
+                cmd.ExecuteNonQuery();
+            }
+            catch { /* 该表在当前数据版本可能不存在，忽略 */ }
+        }
+
+        tx.Commit();
+        return affected > 0;
     }
 
     public void SaveFingerprints(string fileRefId, IEnumerable<Fingerprint> fps)

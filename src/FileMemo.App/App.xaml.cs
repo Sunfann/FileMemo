@@ -3,6 +3,7 @@ using System.Text;
 using System.Windows;
 using FileMemo.App.Data;
 using FileMemo.App.Services;
+using FileMemo.App.ViewModels;
 using FileMemo.App.Views;
 
 namespace FileMemo.App;
@@ -26,11 +27,21 @@ public partial class App : Application
     // 桌面悬浮球（可个性化）+ 便签浮窗注册表（供「收纳 / 释放 / 最小化」批量操作）
     private FloatingBallWindow? _ball;
 
+    // 主窗口引用 + 「真正退出」标志：主窗口点关闭默认只隐藏到托盘，
+    // 托盘 / 悬浮球仍可唤回；只有走「退出」时才真正结束进程。
+    private MainWindow? _main;
+    private bool _shuttingDown;
+    public bool IsShuttingDown => _shuttingDown;
+
     public Database Db { get; private set; } = null!;
     public Repository Repo { get; private set; } = null!;
     public SettingsService Settings { get; private set; } = null!;
     public HotkeyService Hotkeys { get; private set; } = null!;
     public EverythingSearchService Everything { get; private set; } = null!;
+
+    /// <summary>文件变化监听（USN Journal + FileSystemWatcher）。
+    /// 外部（如新增备注时）可调用 EnsureWatchForPath 动态加入监听目录。</summary>
+    public FileWatcherService? Watcher => _watcher;
 
     // ---- 悬浮球系统（配置 + 窗口注册表）----
     public BallConfigService BallConfig { get; private set; } = null!;
@@ -86,6 +97,17 @@ public partial class App : Application
         {
             LogCrash("Settings.Load", ex);
             try { Settings = new SettingsService(); } catch { /* 极端兜底 */ }
+        }
+
+        // ---- 外观主题：必须早于任何窗口创建，让窗口初次显示就是正确配色 ----
+        try
+        {
+            ThemeManager.Initialize(Settings.Theme);
+        }
+        catch (Exception ex)
+        {
+            // 主题初始化失败 → 保持 Theme.Initial.xaml 里合并的默认主题(Mocha)，不影响功能
+            LogCrash("Theme.Initialize", ex);
         }
 
         try
@@ -181,9 +203,7 @@ public partial class App : Application
         // ---- 主窗口：始终尝试显示；仅当主窗口本身都建不出来时才退出 ----
         try
         {
-            var main = new MainWindow();
-            MainWindow = main;
-            main.Show();
+            EnsureMainWindow();
         }
         catch (Exception ex)
         {
@@ -330,7 +350,7 @@ public partial class App : Application
         var menu = new System.Windows.Forms.ContextMenuStrip();
         menu.Items.Add("显示主窗口", null, (_, _) => Dispatcher.Invoke(() =>
         {
-            if (MainWindow is MainWindow mw) { mw.Show(); mw.Activate(); }
+            ShowMainWindow();
         }));
         menu.Items.Add("对选中文件备注", null, (_, _) => Dispatcher.Invoke(SafeShowAnnotationPopup));
         menu.Items.Add("快速便签", null, (_, _) => Dispatcher.Invoke(SafeShowQuickNote));
@@ -339,25 +359,55 @@ public partial class App : Application
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => Dispatcher.Invoke(Shutdown));
         _tray.ContextMenuStrip = menu;
-        _tray.DoubleClick += (_, _) => Dispatcher.Invoke(() =>
+        // 单击（左键）托盘图标即打开主页面；右键仍弹出上下文菜单。
+        _tray.MouseClick += (_, e) =>
         {
-            if (MainWindow is MainWindow mw) { mw.Show(); mw.Activate(); }
-        });
+            if (e.Button == System.Windows.Forms.MouseButtons.Left)
+                Dispatcher.Invoke(ShowMainWindow);
+        };
     }
 
     public void ShowQuickNote() => RegisterNote(new QuickNoteWindow());
+    /// <summary>快速待办：悬浮图标「待办」单击呼出的轻量录入框（QuickTaskWindow）。</summary>
+    public void ShowQuickTask() => RegisterNote(new QuickTaskWindow());
     public void ShowClipboardPanel() => new ClipboardPanelWindow().Show();
     public void ShowWidget() => RegisterNote(new WidgetWindow());
 
-    public void ShowMainWindow()
+    /// <summary>打开 / 关闭主页：主窗口可见时关闭（或按「最小化到托盘」设置隐藏），否则唤出。供悬浮图标单击使用。</summary>
+    public void ToggleMainWindow()
     {
-        if (MainWindow is MainWindow mw)
+        var win = _main;
+        if (win != null && win.IsVisible)
         {
-            mw.Show();
-            if (mw.WindowState == WindowState.Minimized) mw.WindowState = WindowState.Normal;
-            mw.Activate();
+            // OnClosing 中若启用「最小化到托盘」会转为 Hide；否则真正关闭，_main 由 Closed 事件清空。
+            try { win.Close(); } catch { }
+            return;
         }
+        EnsureMainWindow();
     }
+
+    /// <summary>
+    /// 创建（必要时重建）主窗口并显示 / 激活。
+    /// 窗口被真正关闭后也能重新唤回，供托盘、悬浮球、全局快捷键统一调用。
+    /// </summary>
+    public MainWindow EnsureMainWindow()
+    {
+        if (_main == null)
+        {
+            _main = new MainWindow();
+            MainWindow = _main;
+            _main.Closed += (_, _) => _main = null;
+        }
+        if (!_main.IsVisible) _main.Show();
+        if (_main.WindowState == WindowState.Minimized) _main.WindowState = WindowState.Normal;
+        _main.Activate();
+        return _main;
+    }
+
+    public void ShowMainWindow() => EnsureMainWindow();
+
+    /// <summary>打开主窗口并切换到指定导航分区（便签 / 待办 / 文件树备注等），供悬浮球图标直接打开对应页。</summary>
+    public void ShowMainWindow(NavSection section) => EnsureMainWindow().NavigateTo(section);
 
     /// <summary>登记便签类浮窗，便于统一收纳 / 释放 / 最小化；窗口关闭时自动移除。</summary>
     private T RegisterNote<T>(T w) where T : Window
@@ -395,11 +445,19 @@ public partial class App : Application
         catch (Exception ex) { LogCrash("RebuildFloatingBall", ex); }
     }
 
-    /// <summary>悬浮球屏幕中心（DIP），用于收纳动画收拢方向。</summary>
+    /// <summary>
+    /// 悬浮球屏幕中心（DIP），用于便签收纳动画的收拢方向。
+    /// 主球未创建时按新规格回退到「屏幕右上角」的默认位置（right:28, top:30，球径 46）。
+    /// </summary>
     public Point BallCenterScreen()
     {
-        if (_ball != null) return new Point(_ball.Left + _ball.Width / 2, _ball.Top + _ball.Height / 2);
-        return new Point(SystemParameters.WorkArea.Right - 60, SystemParameters.WorkArea.Bottom - 60);
+        // 悬浮球窗口画布为 240×240，球心在画布中心（Center=120），并叠加「贴边滑出」位移。
+        if (_ball != null) return _ball.BallCenterDip;
+
+        double center = Views.FloatingBallWindow.Center;
+        var wa = SystemParameters.WorkArea;
+        // 与 FloatingBallWindow.RestorePosition 的默认落点保持一致：贴屏幕右上角的「小凸起」。
+        return new Point(wa.Right - 14, wa.Top + 40 + center);
     }
 
     /// <summary>一键收纳全部便签（向悬浮球收拢并隐藏）。</summary>
@@ -421,6 +479,7 @@ public partial class App : Application
     /// <summary>供退出特效使用：关闭托盘并结束应用。</summary>
     public new void Shutdown()
     {
+        _shuttingDown = true;
         try { _tray?.Dispose(); } catch { }
         Shutdown(0);
     }

@@ -90,11 +90,17 @@ public sealed class FingerprintService
     /// 给定"新路径"，尝试找回已有备注的 FileRef（处理重命名 / 移动 / 跨卷）。
     /// 返回值：命中的 FileRef（已更新路径）或 null（需要新建 / 用户确认）。
     /// </summary>
-    public (FileRef? matched, List<(FileRef candidate, double score)> candidates) Resolve(string newPath)
+    /// <param name="conservative">
+    /// 保守模式：调用方是"为新文件建备注"而非"监听到的移动事件"时置 true。
+    /// 此时仅接受强信号（同卷 File ID 命中，或跨卷哈希命中且文件名一致），
+    /// 避免把一份全新文件的备注误绑到内容恰好相同的旧文件上。
+    /// </param>
+    public (FileRef? matched, List<(FileRef candidate, double score)> candidates) Resolve(string newPath, bool conservative = false)
     {
         var fresh = BuildFileRef(newPath);
+        var name = System.IO.Path.GetFileName(newPath);
 
-        // 1) 主指纹命中：同卷重命名 / 移动
+        // 1) 主指纹命中：同卷重命名 / 移动（最强信号，两种模式都接受）
         if (fresh.FileId != null)
         {
             var hits = _repo.FindByFileId(fresh.VolumeGuid, fresh.FileId);
@@ -112,46 +118,121 @@ public sealed class FingerprintService
         }
 
         // 2) 辅助指纹：完全哈希命中（跨卷复制的强信号）
-        var name = System.IO.Path.GetFileName(newPath);
         if (fresh.FullHash != null)
         {
             var byHash = _repo.FindByHash(fresh.FullHash, null);
             if (byHash.Count == 1)
             {
                 var existing = byHash[0];
-                existing.Path = newPath;
-                existing.VolumeGuid = fresh.VolumeGuid;
-                existing.FileId = fresh.FileId;
-                existing.Size = fresh.Size;
-                existing.MTime = fresh.MTime;
-                _repo.UpsertFileRef(existing);
-                _repo.AddTimeline("file", existing.Id, "moved", "跨卷移动，完整哈希命中：" + newPath);
-                return (existing, new());
+                // 保守模式下要求文件名也必须一致：内容相同但名字不同的极可能是另一份文件/一次复制
+                bool nameOk = !conservative ||
+                    string.Equals(System.IO.Path.GetFileName(existing.Path), name, StringComparison.OrdinalIgnoreCase);
+                if (nameOk)
+                {
+                    existing.Path = newPath;
+                    existing.VolumeGuid = fresh.VolumeGuid;
+                    existing.FileId = fresh.FileId;
+                    existing.Size = fresh.Size;
+                    existing.MTime = fresh.MTime;
+                    _repo.UpsertFileRef(existing);
+                    _repo.AddTimeline("file", existing.Id, "moved", "跨卷移动，完整哈希命中：" + newPath);
+                    return (existing, new());
+                }
             }
         }
 
         // 3) 网络盘 / NAS：卷序列号 + 路径 + 哈希兜底（需求 3.5.3）
+        //    安全性要求：仅凭"卷上只有一个备注"就认定命中会误伤全新文件，
+        //    故必须同时满足同目录名或文件大小一致，才允许按卷序列号迁移。
         if (fresh.VolumeSerial != null)
         {
             var byVol = _repo.FindByVolumeSerial(fresh.VolumeSerial.Value);
             if (byVol.Count == 1)
             {
                 var existing = byVol[0];
-                existing.Path = newPath;
-                existing.VolumeGuid = fresh.VolumeGuid;
-                existing.FileId = fresh.FileId;
-                existing.IsNetwork = fresh.IsNetwork;
-                existing.Size = fresh.Size;
-                existing.MTime = fresh.MTime;
-                _repo.UpsertFileRef(existing);
-                _repo.AddTimeline("file", existing.Id, "moved", "网络盘/NAS 卷序列号命中：" + newPath);
-                return (existing, new());
+                bool sameName = string.Equals(System.IO.Path.GetFileName(existing.Path), name, StringComparison.OrdinalIgnoreCase);
+                bool sameSize = existing.Size != null && fresh.Size != null && existing.Size == fresh.Size;
+                bool sameDirKind = existing.IsDir == fresh.IsDir;
+                bool acceptable = conservative ? sameDirKind && sameName : sameDirKind && (sameName || sameSize);
+                if (acceptable)
+                {
+                    existing.Path = newPath;
+                    existing.VolumeGuid = fresh.VolumeGuid;
+                    existing.FileId = fresh.FileId;
+                    existing.IsNetwork = fresh.IsNetwork;
+                    existing.Size = fresh.Size;
+                    existing.MTime = fresh.MTime;
+                    _repo.UpsertFileRef(existing);
+                    _repo.AddTimeline("file", existing.Id, "moved", "网络盘/NAS 卷序列号命中：" + newPath);
+                    return (existing, new());
+                }
             }
         }
 
         // 4) 弱信号候选（需用户确认，需求 3.5.5 冲突处理）
         var candidates = _repo.RecommendMigrationCandidates(name, fresh.Size, fresh.MTime);
         return (null, candidates);
+    }
+
+    /// <summary>
+    /// 为一条「原路径可能已失效」的备注找回文件的当前真实路径。
+    /// 用于弥补应用未运行期间（或监听漏事件时）发生的移动/重命名——
+    /// 此时库中记录仍指向旧路径，直接「打开/定位」会失败。
+    /// 依次尝试：原路径仍有效 → 同卷 NTFS File ID 反查 → 完整哈希在库内唯一命中。
+    /// 找不到返回 null（调用方据此提示「文件已被移动或删除」）。
+    /// </summary>
+    public string? TryLocate(FileRef fr)
+    {
+        if (fr == null) return null;
+        try
+        {
+            // 0) 原路径依旧有效：无需迁移
+            if (File.Exists(fr.Path) || Directory.Exists(fr.Path)) return fr.Path;
+
+            // 1) 主指纹：同卷 File ID → 打开句柄反查真实路径。
+            //    File ID 在同一卷内唯一，且随文件移动/重命名保持不变，是最可靠的补救信号。
+            if (fr.FileId != null)
+            {
+                var root = System.IO.Path.GetPathRoot(fr.Path);
+                if (!string.IsNullOrEmpty(root))
+                {
+                    var h = NativeMethods.OpenByFileId(root, fr.FileId.Value);
+                    if (h != NativeMethods.INVALID_HANDLE_VALUE)
+                    {
+                        try
+                        {
+                            var gotId = NativeMethods.GetFileIdFromHandle(h);
+                            var found = NativeMethods.GetPathFromHandle(h);
+                            if (gotId != null && gotId.Value == fr.FileId.Value && !string.IsNullOrEmpty(found))
+                            {
+                                // 双重校验：卷 GUID 一致才采信，避免盘符被复用后误指到别的卷
+                                if (string.IsNullOrEmpty(fr.VolumeGuid) ||
+                                    string.Equals(NativeMethods.TryGetVolumeGuid(found), fr.VolumeGuid, StringComparison.OrdinalIgnoreCase))
+                                    return found;
+                            }
+                        }
+                        finally { NativeMethods.CloseHandle(h); }
+                    }
+                }
+            }
+
+            // 2) 辅助指纹：内容哈希在库内唯一命中（跨卷移动兜底）
+            if (!string.IsNullOrEmpty(fr.FullHash))
+            {
+                string? only = null;
+                int count = 0;
+                foreach (var c in _repo.FindByHash(fr.FullHash, null))
+                {
+                    if (c.Id == fr.Id) continue;
+                    if (!File.Exists(c.Path) && !Directory.Exists(c.Path)) continue;
+                    only = c.Path;
+                    if (++count > 1) break;
+                }
+                if (count == 1) return only;
+            }
+        }
+        catch { }
+        return null;
     }
 
     private static string QuickHash(string path)

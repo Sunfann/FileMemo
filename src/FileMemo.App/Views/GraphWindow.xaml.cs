@@ -4,6 +4,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using FileMemo.App.Models;
+using FileMemo.App.Services;
 
 namespace FileMemo.App.Views;
 
@@ -12,34 +13,56 @@ namespace FileMemo.App.Views;
 ///
 /// 数据来自 <c>App.Instance.Graph</c>；采用轻量力导向布局（斥力 + 弹簧 + 向心），
 /// 在 Canvas 上绘制节点与连线。无第三方依赖，Win10/11 通用。
+///
+/// 配色不再硬编码：节点 / 连线色从主题资源（GraphLegendBrush1..4、TextPrimaryBrush 等）
+/// 读取，因此浅色 / 深色主题下都能保持可读；主题切换时重建已绘制元素。
 /// </summary>
 public partial class GraphWindow : Window
 {
     private GraphData _graph = new();
     private string? _focusId;
 
-    private static readonly Dictionary<GraphNodeKind, Color> KindColors = new()
-    {
-        [GraphNodeKind.Note] = Color.FromRgb(0x00, 0x78, 0xD4),
-        [GraphNodeKind.File] = Color.FromRgb(0x10, 0x7C, 0x10),
-        [GraphNodeKind.Folder] = Color.FromRgb(0x87, 0x64, 0xB8),
-        [GraphNodeKind.Task] = Color.FromRgb(0xF7, 0x63, 0x0C),
-        [GraphNodeKind.Clip] = Color.FromRgb(0x8A, 0x88, 0x86),
-    };
-
-    private static readonly Dictionary<string, Color> EdgeColors = new()
-    {
-        ["wiki"] = Color.FromRgb(0x00, 0x78, 0xD4),
-        ["version"] = Color.FromRgb(0x10, 0x7C, 0x10),
-        ["task"] = Color.FromRgb(0xF7, 0x63, 0x0C),
-        ["ref"] = Color.FromRgb(0x99, 0x99, 0x99),
-    };
-
     public GraphWindow()
     {
         InitializeComponent();
-        Loaded += (_, _) => Reload();
+        SourceInitialized += (_, _) => DwmService.ApplyShellTheme(this);
+        Loaded += (_, _) =>
+        {
+            Reload();
+            ThemeManager.ThemeChanged += OnThemeChanged;
+        };
+        Closed += (_, _) => ThemeManager.ThemeChanged -= OnThemeChanged;
     }
+
+    /// <summary>主题切换：重绘画布（已绘制的 SolidColorBrush 不会自动跟随）+ 同步标题栏。</summary>
+    private void OnThemeChanged()
+    {
+        try { DwmService.ApplyShellTheme(this); Render(); } catch { }
+    }
+
+    // 从资源字典取画刷，取不到时给出安全回退色，避免抛异常
+    private Brush Res(string key, Brush fallback)
+        => TryFindResource(key) as Brush ?? fallback;
+
+    private SolidColorBrush Tint(Brush source, Color fallback)
+        => source is SolidColorBrush s ? s : new SolidColorBrush(fallback);
+
+    private Color KindColor(GraphNodeKind kind) => kind switch
+    {
+        GraphNodeKind.Note => Tint(Res("GraphLegendBrush1", Brushes.SteelBlue), Colors.SteelBlue).Color,
+        GraphNodeKind.File => Tint(Res("GraphLegendBrush2", Brushes.Green), Colors.Green).Color,
+        GraphNodeKind.Folder => Tint(Res("GraphLegendBrush3", Brushes.MediumPurple), Colors.MediumPurple).Color,
+        GraphNodeKind.Task => Tint(Res("GraphLegendBrush4", Brushes.Orange), Colors.Orange).Color,
+        _ => Colors.Gray,
+    };
+
+    private Color EdgeColor(string type) => type switch
+    {
+        "wiki" => KindColor(GraphNodeKind.Note),
+        "version" => KindColor(GraphNodeKind.File),
+        "task" => KindColor(GraphNodeKind.Task),
+        _ => Colors.Gray,
+    };
 
     private void Reload_Click(object sender, RoutedEventArgs e) => Reload();
     private void Reset_Click(object sender, RoutedEventArgs e) { _focusId = null; Reload(); }
@@ -171,7 +194,7 @@ public partial class GraphWindow : Window
         foreach (var e in _graph.Edges)
         {
             if (!pos.TryGetValue(e.FromId, out var a) || !pos.TryGetValue(e.ToId, out var b)) continue;
-            var color = EdgeColors.TryGetValue(e.Type, out var c) ? c : Colors.Gray;
+            var color = EdgeColor(e.Type);
             var line = new Line
             {
                 X1 = a.x, Y1 = a.y, X2 = b.x, Y2 = b.y,
@@ -185,13 +208,13 @@ public partial class GraphWindow : Window
         foreach (var n in _graph.Nodes)
         {
             double r = 12 + Math.Min(18, n.Degree * 2.2);
-            var color = KindColors.TryGetValue(n.Kind, out var c) ? c : Colors.SteelBlue;
+            var color = KindColor(n.Kind);
 
             var ellipse = new Ellipse
             {
                 Width = r * 2, Height = r * 2,
                 Fill = new SolidColorBrush(color),
-                Stroke = Brushes.White,
+                Stroke = Res("GraphNodeStrokeBrush", Brushes.White),
                 StrokeThickness = 2,
                 ToolTip = $"{n.KindLabel}：{n.Label}\n标签：{(string.IsNullOrEmpty(n.Tags) ? "无" : n.Tags)}" +
                           (string.IsNullOrEmpty(n.State) ? "" : $"\n状态：{n.State}") + $"\n连边：{n.Degree}",
@@ -235,7 +258,7 @@ public partial class GraphWindow : Window
             {
                 Text = Trim(n.Label, 12),
                 FontSize = 11,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33)),
+                Foreground = Res("TextPrimaryBrush", Brushes.Black),
                 Tag = n,
                 ToolTip = n.Label
             };

@@ -19,6 +19,8 @@ public sealed class ParticleSystem
         public Color Color;
         public Ellipse? El;
         public bool Alive;
+        /// <summary>true = 透明度全程线性 1→0（规格）；false = 仅最后 25% 淡出（旧行为）。</summary>
+        public bool LinearFade;
         public readonly SolidColorBrush Brush = new(Colors.White);
     }
 
@@ -65,7 +67,60 @@ public sealed class ParticleSystem
             p.MaxLife = lifeSec * (0.75 + _rnd.NextDouble() * 0.5);
             p.Life = p.MaxLife;
             p.Color = colors[_rnd.Next(colors.Count)];
+            p.LinearFade = false;      // 旧式发射：仅最后 25% 淡出（池复用必须显式重置）
             p.Alive = true;
+            if (p.El != null)
+            {
+                p.Brush.Color = p.Color;
+                p.El.Width = p.Size;
+                p.El.Height = p.Size;
+                p.El.Opacity = 1;
+                p.El.Visibility = Visibility.Visible;
+                Canvas.SetLeft(p.El, p.X - p.Size / 2);
+                Canvas.SetTop(p.El, p.Y - p.Size / 2);
+            }
+            _active.Add(p);
+        }
+    }
+
+    /// <summary>
+    /// 径向发射（退出消散特效专用）：按「随机 360° 方向 + 指定扩散距离 + 固定存活时长」生成粒子。
+    /// 初速 = 距离 / 时长，之后逐帧被 damping 衰减 → 位移曲线自然趋近 ease-out。
+    /// </summary>
+    /// <param name="distMin">扩散距离下限 px（规格 50）。</param>
+    /// <param name="distMax">扩散距离上限 px（规格 150）。</param>
+    /// <param name="lifeSec">单颗粒子存活时长 秒（规格 0.6）。</param>
+    /// <param name="sizeMin">粒径下限 px（规格 2）。</param>
+    /// <param name="sizeMax">粒径上限 px（规格 8）。</param>
+    public void EmitRadial(double cx, double cy, IReadOnlyList<Color> colors, int count,
+                           double distMin, double distMax, double lifeSec,
+                           double sizeMin, double sizeMax)
+    {
+        if (colors.Count == 0) return;
+        if (lifeSec <= 0) lifeSec = 0.6;
+        if (sizeMax < sizeMin) sizeMax = sizeMin;
+        if (distMax < distMin) distMax = distMin;
+
+        for (int i = 0; i < count; i++)
+        {
+            var p = Rent();
+            if (p == null) return;
+
+            double ang = _rnd.NextDouble() * Math.PI * 2;      // 随机 360°
+            double dist = distMin + _rnd.NextDouble() * (distMax - distMin);
+            double speed = dist / lifeSec;                     // 初速：走完目标距离所需的平均速度
+
+            p.X = cx;
+            p.Y = cy;
+            p.VX = Math.Cos(ang) * speed;
+            p.VY = Math.Sin(ang) * speed;
+            p.Size = sizeMin + _rnd.NextDouble() * (sizeMax - sizeMin);
+            p.MaxLife = lifeSec;
+            p.Life = lifeSec;
+            p.LinearFade = true;                              // 规格要求透明度全程 1 → 0
+            p.Color = colors[_rnd.Next(colors.Count)];
+            p.Alive = true;
+
             if (p.El != null)
             {
                 p.Brush.Color = p.Color;
@@ -129,7 +184,9 @@ public sealed class ParticleSystem
             {
                 Canvas.SetLeft(p.El, p.X - p.Size / 2);
                 Canvas.SetTop(p.El, p.Y - p.Size / 2);
-                p.El.Opacity = t < 0.25 ? t / 0.25 : 1.0;   // 最后 25% 淡出
+                // LinearFade：整个生命周期线性淡出（1 → 0）；
+                // 否则沿用旧行为：仅在最后 25% 生命淡出。
+                p.El.Opacity = p.LinearFade ? t : (t < 0.25 ? t / 0.25 : 1.0);
             }
             if (p.Life <= 0) Release(p, i);
         }

@@ -51,6 +51,7 @@ public sealed class UsnJournalService : IDisposable
         SeedFrnMap();
 
         var roots = CollectVolumeRoots();
+        SeedVolumeRoots(roots);
         int started = 0;
         foreach (var root in roots)
         {
@@ -89,6 +90,29 @@ public sealed class UsnJournalService : IDisposable
             }
         }
         catch { }
+    }
+
+    /// <summary>
+    /// 预填每个被追踪卷的「根目录 FRN → 卷根路径」映射。
+    /// NTFS 根目录的 FileReferenceNumber 固定为 5，先把这一层补上，
+    /// 才能解析出位于卷根下的第一层重命名/移动事件（无需每次走 OpenFileById）。
+    /// </summary>
+    private void SeedVolumeRoots(IEnumerable<string> roots)
+    {
+        const long NtfsRootFrn = 5;
+        foreach (var root in roots)
+        {
+            try
+            {
+                var volGuid = NativeMethods.TryGetVolumeGuid(root) ?? root;
+                // 卷根必须保留末尾反斜杠（"C:\"）。若裁成 "C:"，Path.Combine 会得到
+                // "C:file.txt" 这种"盘符相对路径"，拼接结果错误。
+                var normalized = root.EndsWith("\\") || root.EndsWith("/") ? root : root + "\\";
+                _frnToPath[(volGuid, NtfsRootFrn)] = normalized;
+                _frnToPath[(root, NtfsRootFrn)] = normalized;
+            }
+            catch { }
+        }
     }
 
     private List<string> CollectVolumeRoots()
@@ -193,8 +217,16 @@ public sealed class UsnJournalService : IDisposable
                 TimeUtc = DateTime.FromFileTimeUtc(rec.TimeStamp)
             };
 
+            // 先记录缓存中的旧路径，再解析新路径（重命名时旧路径是推算子项迁移的关键信息）
+            if (_frnToPath.TryGetValue((volGuid, change.FileReferenceNumber), out var prev))
+                change.PreviousPath = prev;
+
             change.ResolvedPath = ResolvePath(change, volGuid);
-            if (change.ResolvedPath != null)
+
+            // 只在"新名 / 新建"记录上更新 FRN→路径 缓存。
+            // 重命名会连抛旧名与新名两条记录，若把旧名记录也写进缓存，
+            // 可能让后续子项解析到已失效的旧目录名（USN 不保证两条记录的先后顺序）。
+            if (change.ResolvedPath != null && !change.IsRenameOld)
                 _frnToPath[(volGuid, change.FileReferenceNumber)] = change.ResolvedPath;
 
             try { Changed?.Invoke(change); } catch { }
@@ -208,11 +240,78 @@ public sealed class UsnJournalService : IDisposable
     {
         if (c.ParentFileReferenceNumber == 0 || string.IsNullOrEmpty(c.FileName)) return null;
 
-        if (_frnToPath.TryGetValue((volGuid, c.ParentFileReferenceNumber), out var parentPath))
+        // 1) 父目录 FRN 已在缓存中：直接拼接（最快路径）
+        if (_frnToPath.TryGetValue((volGuid, c.ParentFileReferenceNumber), out var parentPath)
+            && !string.IsNullOrEmpty(parentPath))
         {
-            try { return Path.Combine(parentPath, c.FileName); } catch { return null; }
+            try { return System.IO.Path.Combine(parentPath, c.FileName); } catch { return null; }
         }
-        return null;
+
+        // 2) 缓存未命中：用 OpenFileById 打开父目录句柄，反查其真实路径，并回填缓存。
+        //    这一步是"备注跟随文件移动"能否成立的关键——普通目录从未被登记进缓存，
+        //    若不兜底则几乎所有移动/重命名的父目录都解析失败。
+        var resolvedParent = ResolveDirectoryPath(volGuid, c.ParentFileReferenceNumber, c.VolumeRoot);
+        if (resolvedParent == null) return null;
+
+        _frnToPath[(volGuid, c.ParentFileReferenceNumber)] = resolvedParent;
+        try { return System.IO.Path.Combine(resolvedParent, c.FileName); } catch { return null; }
+    }
+
+    /// <summary>用卷根 + 父目录 FRN 打开父目录句柄并取真实路径；顺带回填缓存。</summary>
+    private string? ResolveDirectoryPath(string volGuid, long parentFrn, string volRoot)
+    {
+        try
+        {
+            IntPtr h = NativeMethods.OpenByFileId(volRoot, parentFrn);
+            if (h == NativeMethods.INVALID_HANDLE_VALUE) return null;
+            try
+            {
+                // 防御性校验：句柄的 File ID 应与请求的 FRN 一致（序号复用/并发改名时可能不一致）
+                var gotId = NativeMethods.GetFileIdFromHandle(h);
+                if (gotId != null && gotId.Value != parentFrn) return null;
+
+                var path = NativeMethods.GetPathFromHandle(h);
+                if (!string.IsNullOrEmpty(path))
+                {
+                    _frnToPath[(volGuid, parentFrn)] = path;
+                    return path;
+                }
+                return null;
+            }
+            finally { NativeMethods.CloseHandle(h); }
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// 处理"没有备注的文件夹被移动/重命名"的情况：文件夹自身不在 file_ref 中，
+    /// 但内部可能挂着已备注的子项。借助 FRN 缓存里的旧路径 + 新解析出的路径，
+    /// 把子项备注路径一并迁移过去。
+    /// </summary>
+    private void TryRebindUnannotatedDir(string volGuid, UsnChange c)
+    {
+        try
+        {
+            // 旧路径可能来自缓存（PreviousPath）；再退一步，用"新路径 = 旧父路径 + 文件名"的
+            // 逆运算无从下手，故此处只能依赖缓存。缓存缺失时放弃（下次事件或 FSW 会补上）。
+            var oldDir = c.PreviousPath;
+            if (string.IsNullOrEmpty(oldDir)) return;
+
+            // 只有当旧路径确实像个目录前缀、且与目标不同才处理
+            if (string.Equals(oldDir.TrimEnd('\\', '/'),
+                              c.ResolvedPath!.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase))
+                return;
+
+            // 快速判存在性：只有当库中真的存在该旧目录下的子项时才需要改写
+            var subs = _repo.GetFileRefsUnder(oldDir);
+            if (subs.Count == 0) return;
+
+            int n = _repo.RebindPathPrefix(oldDir, c.ResolvedPath!);
+            if (n > 0)
+                _repo.AddTimeline("file", subs[0].Id, "moved",
+                    $"未备注文件夹移动/重命名，已同步 {n} 个子项备注路径：{oldDir} → {c.ResolvedPath}");
+        }
+        catch { }
     }
 
     /// <summary>把 USN 变化落到备注绑定：重命名 / 移动命中 FileId 时自动同步路径。</summary>
@@ -220,6 +319,10 @@ public sealed class UsnJournalService : IDisposable
     {
         try
         {
+            // 重命名/移动时 USN 会连抛两条记录（旧名 + 新名）。旧名记录解析出的仍是旧路径，
+            // 若在此更新会把刚同步好的新路径又改回去，因此只处理"新名"记录。
+            if (c.IsRenameOld) return;
+
             if (c.IsRename || c.IsCreate)
             {
                 var fr = _repo.FindByFileId(volGuid, c.FileReferenceNumber).FirstOrDefault();
@@ -232,6 +335,22 @@ public sealed class UsnJournalService : IDisposable
                     _repo.UpsertFileRef(fr);
                     _repo.AddTimeline("file", fr.Id, c.IsRename ? "renamed" : "created",
                         $"USN 实时同步：{old} → {c.ResolvedPath}");
+
+                    // 关键补强：若被移动/重命名的对象是【文件夹】，其内部已备注的子文件/子文件夹
+                    // 也必须跟随。FileRef.Id 不变，备注自然保留，只需同步路径前缀。
+                    if (fr.IsDir)
+                    {
+                        int n = _repo.RebindPathPrefix(old, c.ResolvedPath);
+                        if (n > 0)
+                            _repo.AddTimeline("file", fr.Id, "moved",
+                                $"文件夹移动/重命名，已同步 {n} 个子项备注路径：{old} → {c.ResolvedPath}");
+                    }
+                }
+                else if (c.IsRename && c.ResolvedPath != null)
+                {
+                    // 被移动/重命名的文件夹本身没有备注，但它内部可能有已备注的子项。
+                    // 用缓存里的旧路径推算新路径，仍要把子项备注跟着搬过去。
+                    TryRebindUnannotatedDir(volGuid, c);
                 }
             }
             else if (c.IsDelete)
@@ -242,7 +361,18 @@ public sealed class UsnJournalService : IDisposable
                     fr.Offline = true;
                     _repo.UpsertFileRef(fr);
                     _repo.AddTimeline("file", fr.Id, "deleted", "USN 检测到删除，备注保留为孤儿：" + fr.Path);
+
+                    // 文件夹被整体删除：其下子项一并标记离线（备注保留）
+                    if (fr.IsDir)
+                    {
+                        foreach (var sub in _repo.GetFileRefsUnder(fr.Path))
+                        {
+                            sub.Offline = true;
+                            _repo.UpsertFileRef(sub);
+                        }
+                    }
                 }
+                _frnToPath.TryRemove((volGuid, c.FileReferenceNumber), out _);
             }
         }
         catch { }

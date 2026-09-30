@@ -1,4 +1,5 @@
 using System.Windows;
+using FileMemo.App.Services;
 
 namespace FileMemo.App.Views;
 
@@ -9,6 +10,7 @@ public partial class AddAnnotationDialog : Window
     public AddAnnotationDialog()
     {
         InitializeComponent();
+        SourceInitialized += (_, _) => DwmService.ApplyShellTheme(this);
         PathBox.Focus();
     }
 

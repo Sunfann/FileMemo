@@ -36,7 +36,7 @@ public partial class ParticleWindow : Window
         Stage.Width = Width;
         Stage.Height = Height;
 
-        _system.Prewarm(Math.Max(400, cfg.Count + 80));
+        _system.Prewarm(Math.Max(160, cfg.Count + 40));
 
         var palette = colors.ToList();
         if (palette.Count == 0) palette.Add(Colors.White);
@@ -45,10 +45,12 @@ public partial class ParticleWindow : Window
         double cx = area.X - Left + area.Width / 2;
         double cy = area.Y - Top + area.Height / 2;
 
-        _system.Emit(cx, cy, palette, cfg.Count, 2, 8, cfg.DurationMs / 1000.0);
+        // 规格：随机 360°、扩散距离 50~150px、粒径 2~8px、存活 600ms、ease-out、透明度 1→0
+        double lifeSec = Math.Max(0.2, cfg.DurationMs / 1000.0);
+        _system.EmitRadial(cx, cy, palette, cfg.Count, 50, 150, lifeSec, 2, 8);
         _system.Start(cfg.Gravity, cfg.Damping);
 
-        // 轻微屏幕闪白（200ms）
+        // 轻微屏幕闪白（粒子数变少后白闪是主体之一，峰值压低到 0.10 避免过曝）
         var flash = new Rectangle
         {
             Fill = Brushes.White,
@@ -62,8 +64,8 @@ public partial class ParticleWindow : Window
         Stage.Children.Add(flash);
         var fa = new DoubleAnimationUsingKeyFrames();
         fa.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.Zero)));
-        fa.KeyFrames.Add(new LinearDoubleKeyFrame(0.15, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(80))));
-        fa.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(200))));
+        fa.KeyFrames.Add(new LinearDoubleKeyFrame(0.10, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(70))));
+        fa.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(180))));
         flash.BeginAnimation(OpacityProperty, fa);
 
         _finish = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(cfg.DurationMs + 250) };

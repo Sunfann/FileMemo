@@ -4,17 +4,17 @@
 winexe
 C#
 .cs
-C:\Users\sfann\Desktop\SuperNote\FileMemo\FileMemo\src\FileMemo.App\obj\Debug\net8.0-windows10.0.19041.0\
+C:\Users\sfann\Desktop\新建文件夹\src\FileMemo.App\obj\Debug\net8.0-windows10.0.19041.0\
 FileMemo.App
 none
 false
 TRACE;WINDOWS_OCR;DEBUG;NET;NET8_0;NETCOREAPP
-C:\Users\sfann\Desktop\SuperNote\FileMemo\FileMemo\src\FileMemo.App\App.xaml
-11-1205169818
+C:\Users\sfann\Desktop\新建文件夹\src\FileMemo.App\App.xaml
+141086078548
 
-53-549802286
+591317417407
 2141000144318
-Effects\ParticleWindow.xaml;Themes\Controls.xaml;Themes\Tokens.xaml;Views\AddAnnotationDialog.xaml;Views\ClipboardPanelWindow.xaml;Views\FloatingBallWindow.xaml;Views\FloatingNoteWindow.xaml;Views\GraphWindow.xaml;Views\MainWindow.xaml;Views\QuickNoteWindow.xaml;Views\WidgetWindow.xaml;
+Effects\ParticleWindow.xaml;Themes\Controls.xaml;Themes\Icons.xaml;Themes\Theme.Initial.xaml;Themes\Tokens.xaml;Views\AddAnnotationDialog.xaml;Views\ClipboardPanelWindow.xaml;Views\FloatingBallWindow.xaml;Views\FloatingNoteWindow.xaml;Views\GraphWindow.xaml;Views\MainWindow.xaml;Views\QuickNoteWindow.xaml;Views\QuickTaskWindow.xaml;Views\WidgetWindow.xaml;
 
 False
 

@@ -4,7 +4,7 @@
         Title="添加文件备注" Width="520" SizeToContent="Height"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
-        Background="{StaticResource SurfaceBrush}"
+        Background="{DynamicResource SurfaceBrush}"
         FontFamily="{StaticResource AppFontFamily}">
     <StackPanel Margin="20">
         <TextBlock Text="添加文件 / 文件夹备注" Style="{StaticResource TextH2}" Margin="0,0,0,4" />

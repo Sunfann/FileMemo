@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -17,67 +16,150 @@ using FileMemo.App.Effects;
 using FileMemo.App.Interop;
 using FileMemo.App.Models;
 using FileMemo.App.Services;
+using FileMemo.App.ViewModels;
 
 namespace FileMemo.App.Views;
 
 /// <summary>
-/// 桌面悬浮球系统（按提示词实现）：
-/// - 深色玻璃质感主球 + 环绕光环；呼吸动画、悬停放大。
-/// - 卫星球（默认 4 个）沿弧线排列，悬停主球淡入展开，鼠标离开 1.5s 收拢。
-/// - 红点常驻：长按 1000ms（Mouse.Capture + Stopwatch + 环形进度）触发全局「收纳 / 释放」。
-/// - 长按主球 1500ms 触发粒子消散特效并退出。
-/// - 拖拽移动 + 靠近边缘吸附 + 越过边缘半隐藏；WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW；
-///   全屏应用（D3D / 演示模式）时自动隐藏。
+/// 未来感桌面悬浮控制球（Floating Intelligence Orb）。
+///
+/// 结构：一颗主球（圆角磁贴）+ 一块展开动作面板。
+///       · 主球唯一（产品身份）——「文件夹」，是文笺的化身；
+///       · 面板动作项：快速便签 / 打开剪贴板 / 快速待办 / 快速文件树备注，
+///         纯图标样式（不显示汉字），一行「从右到左」排列，点击直接执行，不弹二级菜单；
+///       · 红点（管理控制点）独立于面板——收纳 / 释放永远可用，不受面板配置影响。
+///
+/// 形态：平时只是屏幕边缘的一个小凸起——近乎透明（仅留一道淡影，不占视觉）；
+///       你靠近它，它滑出来并淡入为半透明（面板一并展开）；你离开，它缩回去并恢复近乎透明。
+///
+/// 交互：单击主球 → 打开 / 关闭主页；单击面板图标 → 直达对应入口；
+///       右键 → 展开 / 收起面板；拖拽 → 移动。
 /// </summary>
 public partial class FloatingBallWindow : Window
 {
-    private const double Center = 110;
-    private const double SatelliteRadius = 70;
+    // -------- 画布几何（窗口 240×240，中心 120）--------
+    /// <summary>悬浮球窗口画布边长（DIP）。外部（App）计算球心时需要。</summary>
+    public const double CanvasSize = 240;
+    /// <summary>画布中心到球心的偏移（DIP）。</summary>
+    public const double Center = 120;
+    private const double MinBall = 38;
+    private const double MaxBall = 56;
+    /// <summary>贴边收拢时，主球在屏幕边缘露出的宽度（DIP）——形成「小凸起」。</summary>
+    private const double Peek = 14;
+
+    // -------- 不透明度（吸附时近乎透明 / 呼出时半透明，均可在设置页调整）--------
+    /// <summary>贴边收拢态：近乎透明，只在屏幕边缘留一道可察觉的淡影（默认 0.10）。</summary>
+    private double DockedOpacity => Math.Clamp(S.MainBall.DockedOpacity, 0.02, 1.0);
+    /// <summary>呼出（滑出 / 悬停）态：半透明，既能看清又不遮挡底层内容（默认 0.72）。</summary>
+    private double RevealedOpacity => Math.Clamp(S.MainBall.RevealedOpacity, 0.05, 1.0);
+
+    /// <summary>贴边停靠方向。</summary>
+    private enum DockSide { Left, Right }
+
+    // -------- 时间参数 --------
+    private static readonly TimeSpan IntroDuration = TimeSpan.FromMilliseconds(1200);
     private static readonly TimeSpan HideDelay = TimeSpan.FromMilliseconds(1500);
-    private static readonly TimeSpan MainLongPress = TimeSpan.FromMilliseconds(1500);
+
+    /// <summary>交互状态机（NORMAL → HOVER → PRESS → EXIT_ANIMATION → DESTROY）。</summary>
+    private enum OrbState { Normal, Hover, Press, ExitAnimation, Destroy }
 
     private BallConfigService Config => App.Instance.BallConfig;
     private BallSettings S => Config.Current;
 
     private readonly DispatcherTimer _hideTimer = new();
+    private readonly DispatcherTimer _hoverProbe = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly DispatcherTimer _fullScreenTimer = new() { Interval = TimeSpan.FromMilliseconds(1200) };
-    private readonly List<Grid> _satellites = new();
 
-    private Ellipse? _mainBall;
-    private ScaleTransform? _mainScale;
-    private Ellipse? _redDot;
-    private Path? _progressArc;
-    private PathFigure? _progressFigure;
-    private ArcSegment? _progressSeg;
+    // -------- 视觉元素 --------
+    private Grid? _orbBody;          // OrbBody：深灰圆角磁贴（渐变底板 + 中央应用图标）
 
+    private Grid? _controlPointHost; // 管理控制点（含扩大命中区）
+    private Ellipse? _controlPoint;  // 控制点可见圆
+    private ScaleTransform? _controlPointScale;
+    private Brush? _controlPointBrush;
+
+    private readonly ScaleTransform _mainScale = new(1, 1);
     private readonly Stopwatch _redPress = new();
-    private readonly Stopwatch _mainPress = new();
-    private bool _redPressing, _mainPressing, _longPressFired, _busy;
 
+    private OrbState _state = OrbState.Normal;
+    private bool _mainPressing, _redPressing, _longPressFired, _busy;
+
+    // -------- 展开面板 / 贴边滑出 --------
+    private Canvas? _orbitHost;                                    // 动作面板容器（整体显隐 / 命中）
+    private readonly List<(FrameworkElement host, TranslateTransform off, double dx, double dy)> _satellites = new();
+    private readonly TranslateTransform _sceneShift = new(0, 0);   // 贴边「小凸起 ↔ 滑出」整体位移
+    // 面板悬停热区（画布坐标，由 BuildActionPanel 填充；_bandX1 <= _bandX0 表示无面板）
+    private double _bandX0, _bandX1, _bandCy, _bandHalfH;
+    private bool _snapped;                                         // 当前是否贴边停靠
+    private bool _revealed = true;                                 // 当前是否已滑出（展开）
+    private DockSide _side = DockSide.Right;                       // 停靠边
+
+    // -------- 拖动 --------
     private bool _dragging;
     private Point _dragStartScreen;
     private Point _dragOffsetDevice;
 
-    private Popup? _menu;
-    private bool _menuOpen;
+    private double BallSize => Math.Clamp(S.MainBall.Size, MinBall, MaxBall);
+    private double ControlSize => Math.Clamp(S.MainBall.ControlPointSize, 20, 40);
 
-    private double BallSize => Math.Clamp(S.MainBall.Size, 32, 128);
+    /// <summary>主球球心在屏幕上的位置（DIP），供 App 计算收纳动画收拢点。</summary>
+    public Point BallCenterDip => new(Left + Center + _sceneShift.X, Top + Center);
 
     public FloatingBallWindow()
     {
         InitializeComponent();
+
         _hideTimer.Interval = HideDelay;
-        _hideTimer.Tick += (_, _) => { _hideTimer.Stop(); CollapseSatellites(); };
+        _hideTimer.Tick += (_, _) => { _hideTimer.Stop(); ConcealControlPoint(); Retract(); };
+
+        // MouseEnter / MouseLeave 在 WS_EX_NOACTIVATE 下可能不可靠，用光标距离探测兜底：
+        // 靠近球 → 滑出并淡入为半透明；离开 → 延迟收回成屏幕边缘近乎透明的「小凸起」。
+        _hoverProbe.Tick += (_, _) =>
+        {
+            if (_busy) return;
+            if (IsCursorNearOrb())
+            {
+                _hideTimer.Stop();
+                if (_snapped) Reveal();
+            }
+            else if (_state is OrbState.Normal or OrbState.Hover)
+            {
+                ConcealControlPoint();
+                if (!_hideTimer.IsEnabled) _hideTimer.Start();
+            }
+        };
+
         _fullScreenTimer.Tick += (_, _) => UpdateFullScreenVisibility();
-        Loaded += (_, _) => { BuildVisual(); RestorePosition(); StartBreathing(); _fullScreenTimer.Start(); };
+
+        Loaded += (_, _) =>
+        {
+            // 先确定吸附状态与贴边方向（面板与「悬浮图标同一行」的布局、控制点方位都依赖它们），再构建视觉。
+            _snapped = S.MainBall.SnapToEdge;
+            _side = DetermineSide();
+            BuildVisual();
+            RestorePosition();
+            if (S.MainBall.PlayIntroAnimation)
+            {
+                PlayIntroAnimation();   // 内部 Completed → StartBreathing
+            }
+            else
+            {
+                SetStableScale(1.0);
+                if (S.MainBall.Breathing) StartBreathing();
+            }
+            _fullScreenTimer.Start();
+            _hoverProbe.Start();
+        };
+
         Closed += (_, _) =>
         {
             _fullScreenTimer.Stop();
-            CompositionTarget.Rendering -= OnProgressRendering;
-            CloseMenu();
+            _hoverProbe.Stop();
+            CompositionTarget.Rendering -= OnProgressRendering;   // 兜底退订，防止泄漏
         };
-        MouseLeave += (_, _) => { if (!_menuOpen) _hideTimer.Start(); };
-        MouseEnter += (_, _) => { _hideTimer.Stop(); RevealSatellites(); HoverMain(true); };
+
+        MouseLeave += (_, _) => { _hideTimer.Start(); };
+        MouseEnter += (_, _) => { _hideTimer.Stop(); HoverMain(true); Reveal(); };
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -99,278 +181,610 @@ public partial class FloatingBallWindow : Window
         catch { }
     }
 
-    // ------------------------------------------------------------ 绘制
+    // ==================================================================
+    //  绘制
+    // ==================================================================
     private void BuildVisual()
     {
         Stage.Children.Clear();
-        _satellites.Clear();
 
-        double r = BallSize / 2;
-        var accent = ParseColor(S.MainBall.GlowColor, Color.FromRgb(0x00, 0x78, 0xD4));
+        // 「贴边小凸起 ↔ 滑出」：整体位移作用于整个场景（球 / 面板 / 控制点一起滑动）
+        Stage.RenderTransformOrigin = new Point(0, 0);
+        Stage.RenderTransform = _sceneShift;
 
-        // 环绕光环
-        if (S.MainBall.RingEnabled)
+        double d = BallSize;
+        double r = d / 2;
+
+        // 1) 展开动作面板（位于主球之下）
+        BuildOrbit();
+
+        // 2) OrbBody：圆角方形「悬浮磁贴」——深灰渐变圆角方块 + 中央应用图标。
+        double cornerRadius = d * 0.30;   // 圆角半径（圆角方形）
+        double iconSize = d * 0.66;       // 图标边长占磁贴比例
+
+        _orbBody = new Grid
         {
-            var rings = BuildRings(r * 2.35);
-            Canvas.SetLeft(rings, Center - r * 1.18);
-            Canvas.SetTop(rings, Center - r * 1.18);
-            Stage.Children.Add(rings);
-        }
-
-        // 卫星球（先加入 → 处于主球下层）
-        var sats = S.Satellites.Where(s => s.Enabled).Take(6).ToList();
-        int n = sats.Count;
-        for (int i = 0; i < n; i++)
-        {
-            double ang = n <= 1 ? 0 : (-45 + 90.0 * i / (n - 1)) * Math.PI / 180.0;
-            double sx = Center + SatelliteRadius * Math.Cos(ang);
-            double sy = Center + SatelliteRadius * Math.Sin(ang);
-            double size = Math.Max(16, BallSize * 0.36);
-            var color = ParseColor(sats[i].Color, accent);
-            var sat = MakeSatellite(size, color, sats[i], sx, sy);
-            _satellites.Add(sat);
-            Stage.Children.Add(sat);
-        }
-
-        // 主球
-        _mainScale = new ScaleTransform(1, 1);
-        _mainBall = MakeBall(BallSize, ParseColor(S.MainBall.Color, Color.FromRgb(0x0A, 0x0A, 0x0A)), accent, S.MainBall.UseImage);
-        _mainBall.RenderTransformOrigin = new Point(0.5, 0.5);
-        _mainBall.RenderTransform = _mainScale;
-        Canvas.SetLeft(_mainBall, Center - r);
-        Canvas.SetTop(_mainBall, Center - r);
-        _mainBall.MouseEnter += (_, _) => { _hideTimer.Stop(); RevealSatellites(); HoverMain(true); };
-        _mainBall.MouseLeave += (_, _) => { if (!_menuOpen) _hideTimer.Start(); HoverMain(false); };
-        _mainBall.MouseLeftButtonDown += MainBall_MouseLeftButtonDown;
-        _mainBall.MouseMove += MainBall_MouseMove;
-        _mainBall.MouseLeftButtonUp += MainBall_MouseLeftButtonUp;
-        _mainBall.MouseRightButtonUp += (_, e) => { e.Handled = true; OpenRadialMenu(); };
-        Stage.Children.Add(_mainBall);
-
-        // 红点 + 环形进度
-        if (S.RedDot.Enabled)
-        {
-            double dotD = Math.Max(10, BallSize * 0.22);
-            double dotCx = Center + r * 0.78;
-            double dotCy = Center - r * 0.78;
-
-            _progressArc = BuildProgressArc(new Point(dotCx, dotCy), dotD * 0.95);
-            _progressArc.Opacity = 0;
-            Stage.Children.Add(_progressArc);
-
-            _redDot = new Ellipse
+            Width = d,
+            Height = d,
+            Cursor = Cursors.SizeAll,
+            ToolTip = "文笺 FileMemo\n单击：打开/关闭主页  右键：展开/收起面板  拖拽：移动",
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = _mainScale,
+            Effect = new DropShadowEffect
             {
-                Width = dotD,
-                Height = dotD,
-                Fill = MakeDotBrush(),
-                Cursor = Cursors.Hand,
-                ToolTip = "长按一秒：一键收纳 / 释放全部便签",
-                Effect = new DropShadowEffect
-                {
-                    Color = Color.FromRgb(0xFF, 0x3B, 0x30),
-                    BlurRadius = 20,
-                    ShadowDepth = 0,
-                    Opacity = 0.85
-                }
-            };
-            Canvas.SetLeft(_redDot, dotCx - dotD / 2);
-            Canvas.SetTop(_redDot, dotCy - dotD / 2);
-            _redDot.MouseLeftButtonDown += RedDot_MouseLeftButtonDown;
-            _redDot.MouseLeftButtonUp += RedDot_MouseLeftButtonUp;
-            Stage.Children.Add(_redDot);
-        }
+                Color = Colors.Black,
+                BlurRadius = 14,
+                ShadowDepth = 2,
+                Direction = 270,
+                Opacity = 0.35,
+                RenderingBias = RenderingBias.Performance
+            }
+        };
 
-        Opacity = Math.Clamp(S.MainBall.Opacity, 0.3, 1.0);
-        CollapseSatellites(instant: true);
+        var plate = new Rectangle
+        {
+            Width = d,
+            Height = d,
+            RadiusX = cornerRadius,
+            RadiusY = cornerRadius,
+            Fill = new LinearGradientBrush(
+                Color.FromRgb(0x45, 0x45, 0x4D),
+                Color.FromRgb(0x2A, 0x2A, 0x31),
+                new Point(0.5, 0), new Point(0.5, 1)),
+            Stroke = new SolidColorBrush(Color.FromRgb(0x56, 0x56, 0x5F)),
+            StrokeThickness = 1,
+            SnapsToDevicePixels = true
+        };
+        _orbBody.Children.Add(plate);
+
+        var iconBrush = LoadPackImage("ball_tile_icon.png");
+        if (iconBrush != null)
+        {
+            var icon = new System.Windows.Controls.Image
+            {
+                Width = iconSize,
+                Height = iconSize,
+                Stretch = Stretch.Uniform,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                IsHitTestVisible = false,
+                Source = iconBrush.ImageSource
+            };
+            _orbBody.Children.Add(icon);
+        }
+        Canvas.SetLeft(_orbBody, Center - r);
+        Canvas.SetTop(_orbBody, Center - r);
+        _orbBody.MouseEnter += (_, _) => { _hideTimer.Stop(); RevealControlPoint(); HoverMain(true); Reveal(); };
+        _orbBody.MouseLeave += (_, _) =>
+        {
+            _hideTimer.Start();
+            if (_state is OrbState.Hover) GoState(OrbState.Normal);
+        };
+        _orbBody.MouseLeftButtonDown += MainBall_MouseLeftButtonDown;
+        _orbBody.MouseMove += MainBall_MouseMove;
+        _orbBody.MouseLeftButtonUp += MainBall_MouseLeftButtonUp;
+        _orbBody.MouseRightButtonUp += (_, e) => { e.Handled = true; ToggleRing(); };
+        Stage.Children.Add(_orbBody);
+
+        // 4) 管理控制点（磁贴右侧水平居中）
+        if (S.RedDot.Enabled && S.MainBall.ShowControlPoint) BuildControlPoint();
+
+        // 初始不透明度按「当前是否已呼出」决定；贴边收拢时近乎透明。
+        Opacity = TargetOpacity();
     }
 
-    private Ellipse MakeBall(double size, Color baseColor, Color glow, bool useImage)
+    private void BuildControlPoint()
     {
-        var ball = new Ellipse
+        double cs = ControlSize;
+        // 停靠在左边缘时控制点移到磁贴左侧，避免被屏幕边缘裁掉。
+        double cx = _side == DockSide.Left
+            ? Center - BallSize / 2 - cs / 2 - 10
+            : Center + BallSize / 2 + cs / 2 + 10;
+        double cy = Center;
+
+        _controlPointScale = new ScaleTransform(0.8, 0.8);
+        _controlPointHost = new Grid
         {
-            Width = size,
-            Height = size,
-            Cursor = Cursors.SizeAll,
-            Effect = new DropShadowEffect { Color = glow, BlurRadius = size * 0.55, ShadowDepth = 0, Opacity = 0.6 }
+            Width = cs + 16,
+            Height = cs + 16,
+            Opacity = 0,
+            Cursor = Cursors.Hand,
+            ToolTip = "单击：最小化全部便签 长按：一键收纳 / 释放",
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = _controlPointScale
         };
-        if (useImage)
+
+        // 扩大命中区：必须有非 null 的 Fill 才参与命中测试（Transparent 可行，x:Null 不行）
+        var hitArea = new Ellipse
         {
-            var img = LoadPackImage("ball.png");
-            ball.Fill = img ?? (Brush)MakeGlassBrush(baseColor, glow);
+            Width = cs + 16,
+            Height = cs + 16,
+            Fill = Brushes.Transparent,
+            IsHitTestVisible = true
+        };
+        _controlPointHost.Children.Add(hitArea);
+
+        _controlPointBrush = MakeControlBrush(ParseColor(S.MainBall.Color, Color.FromRgb(0x0A, 0x0A, 0x0C)));
+        _controlPoint = new Ellipse
+        {
+            Width = cs,
+            Height = cs,
+            Fill = _controlPointBrush,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Effect = new DropShadowEffect { Color = Color.FromRgb(0x00, 0x00, 0x00), BlurRadius = 14, ShadowDepth = 0, Opacity = 0.45 }
+        };
+        _controlPointHost.Children.Add(_controlPoint);
+
+        _controlPointHost.MouseEnter += (_, _) => { _hideTimer.Stop(); RevealControlPoint(); };
+        _controlPointHost.MouseLeftButtonDown += RedDot_MouseLeftButtonDown;
+        _controlPointHost.MouseLeftButtonUp += RedDot_MouseLeftButtonUp;
+
+        Canvas.SetLeft(_controlPointHost, cx - (cs + 16) / 2);
+        Canvas.SetTop(_controlPointHost, cy - (cs + 16) / 2);
+        Stage.Children.Add(_controlPointHost);
+
+        UpdateControlPointColor(animate: false);
+    }
+
+    // ==================================================================
+    //  展开面板（图标动作项，一行从右到左）
+    // ==================================================================
+    /// <summary>构建动作面板容器并落位。</summary>
+    private void BuildOrbit()
+    {
+        _orbitHost = new Canvas { Width = CanvasSize, Height = CanvasSize, IsHitTestVisible = true };
+        Stage.Children.Add(_orbitHost);
+        RebuildOrbit();
+        SetOrbitVisible(_revealed, animate: false);
+    }
+
+    private void RebuildOrbit()
+    {
+        if (_orbitHost == null) return;
+        _orbitHost.Children.Clear();
+        _satellites.Clear();
+
+        // 重置面板悬停热区（画布坐标），由 BuildActionPanel 按需重新填充。
+        _bandX0 = _bandX1 = _bandCy = _bandHalfH = 0;
+
+        // 设置页「显示展开面板」开关关闭时，不构建任何动作项。
+        // （右键悬浮图标切换的也是这个开关；旧版 RingEnabled 光环开关不再拦截面板。）
+        if (!S.MainBall.ShowSatellite) return;
+
+        BuildActionPanel();
+    }
+
+    /// <summary>
+    /// 构建「动作面板」：以悬浮磁贴为把手，悬停时从贴边一侧展开一块圆角深灰面板，
+    /// 水平「一行从右到左」排列若干纯图标动作项（打开便签 / 打开剪贴板 / 打开待办 /
+    /// 打开文件文件夹备注）——图标即按钮，不显示任何汉字。
+    /// 面板整体注册进 _satellites，复用既有的「唤醒滑出 / 收拢退回」显隐动画。
+    /// </summary>
+    private void BuildActionPanel()
+    {
+        var enabled = new List<SatelliteConfig>();
+        foreach (var s in S.Satellites) if (s.Enabled) enabled.Add(s);
+        if (enabled.Count == 0) return;
+
+        bool right = _side == DockSide.Right;
+
+        // 一行排列；停靠右边缘时 FlowDirection=RightToLeft → 第一个动作（便签）显示在最右侧、
+        // 贴着磁贴，其余依次向左排，即「从右到左」。停靠左边缘时镜像为从左到右。
+        var row = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            FlowDirection = right ? FlowDirection.RightToLeft : FlowDirection.LeftToRight
+        };
+        foreach (var sat in enabled) row.Children.Add(MakeActionIcon(sat));
+
+        var panel = new Border
+        {
+            Background = new LinearGradientBrush(
+                Color.FromRgb(0x45, 0x45, 0x4D), Color.FromRgb(0x2A, 0x2A, 0x31),
+                new Point(0.5, 0), new Point(0.5, 1)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0x56, 0x56, 0x5F)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(5, 4, 5, 4),
+            Child = row,
+            MaxHeight = CanvasSize - 16,
+            Effect = new DropShadowEffect
+            {
+                Color = Colors.Black, BlurRadius = 18, ShadowDepth = 3,
+                Direction = 270, Opacity = 0.40, RenderingBias = RenderingBias.Performance
+            },
+            RenderTransformOrigin = new Point(0.5, 0.5)
+        };
+
+        var off = new TranslateTransform(0, 0);
+        panel.RenderTransform = off;
+
+        // 量测后按当前形态摆放。
+        panel.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        var sz = panel.DesiredSize;
+
+        double left, top, hideDx, hideDy;
+        if (_snapped)
+        {
+            // 贴边：面板只在「滑出」时可见，因此按滑出后的屏幕布局反推画布坐标 ——
+            // 球贴向屏幕边缘，面板贴着球内侧水平展开（一行、从右到左）；
+            // 未滑出时面板随场景位移退到画布外（不可见、不响应命中）。
+            double shift = right ? RevealedShift() : -RevealedShift();
+            double screenLeft = right
+                ? (Center + shift) - BallSize / 2 - 8 - sz.Width
+                : (Center + shift) + BallSize / 2 + 8;
+            left = screenLeft - shift;
+            top = Center - sz.Height / 2;
+            hideDx = right ? -26 : 26;   // 收回时向贴边一侧退回
+            hideDy = 0;
         }
         else
         {
-            ball.Fill = MakeGlassBrush(baseColor, glow);
+            // 自由漂浮：球居画布中央，面板改为球下方横排（仍是一行、从右到左）。
+            left = Center - sz.Width / 2;
+            top = Center + BallSize / 2 + 8;
+            hideDx = 0;
+            hideDy = 26;                 // 收回时向上缩回球底
         }
-        return ball;
+        // 只约束垂直方向；水平方向允许探出画布边缘（滑出时才随场景位移进入可视区）。
+        top = Math.Max(4, Math.Min(CanvasSize - sz.Height - 4, top));
+        Canvas.SetLeft(panel, left);
+        Canvas.SetTop(panel, top);
+
+        _orbitHost.Children.Add(panel);
+        _satellites.Add((panel, off, hideDx, hideDy));
+
+        // 记录面板悬停热区（画布坐标）：光标移向面板图标时不误触发收回。
+        _bandX0 = left - 8;
+        _bandX1 = left + sz.Width + 8;
+        _bandCy = top + sz.Height / 2;
+        _bandHalfH = sz.Height / 2 + 10;
     }
 
-    private static Brush MakeGlassBrush(Color baseColor, Color glow)
+    /// <summary>
+    /// 单个动作项：纯图标圆角磁贴按钮（36×36，仅图标，无文字），悬停高亮 + 微放大，
+    /// 单击直接执行对应动作（不弹二级菜单）。
+    /// </summary>
+    private FrameworkElement MakeActionIcon(SatelliteConfig sat)
+    {
+        var color = ParseColor(sat.Color, Color.FromRgb(0xB8, 0xC4, 0xD0));
+        // 深色玻璃底色（#151A21 一类）在面板上没有辨识度，统一提亮为冷白灰作为图标色。
+        if (color.R < 0x60 && color.G < 0x60 && color.B < 0x70)
+            color = Color.FromRgb(0xC9, 0xD1, 0xDC);
+        var label = string.IsNullOrWhiteSpace(sat.Label) ? sat.Action.ToString() : sat.Label;
+
+        // 图标：优先当 Icons.xaml 矢量资源键解析；失败则按任意文字 / emoji 渲染。
+        FrameworkElement icon;
+        var vector = !string.IsNullOrWhiteSpace(sat.Icon) ? TryFindResource(sat.Icon) as Geometry : null;
+        if (vector != null)
+        {
+            icon = new System.Windows.Shapes.Path
+            {
+                Data = vector,
+                Fill = new SolidColorBrush(color),
+                Width = 17, Height = 17,
+                Stretch = Stretch.Uniform,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+        }
+        else
+        {
+            icon = new TextBlock
+            {
+                Text = string.IsNullOrWhiteSpace(sat.Icon) ? "●" : sat.Icon,
+                FontSize = 15,
+                Foreground = new SolidColorBrush(color),
+                TextAlignment = TextAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+        }
+
+        var scale = new ScaleTransform(1, 1);
+        var normal = new SolidColorBrush(Color.FromArgb(0x1E, 0xFF, 0xFF, 0xFF));
+        var hover = new SolidColorBrush(Color.FromArgb(0x3C, 0xFF, 0xFF, 0xFF));
+
+        var btn = new Border
+        {
+            Width = 34,
+            Height = 34,
+            CornerRadius = new CornerRadius(9),
+            Background = normal,
+            Margin = new Thickness(2, 0, 2, 0),
+            Cursor = Cursors.Hand,
+            Child = icon,
+            ToolTip = label,               // 图标无汉字，悬停提示保留文字说明
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = scale
+        };
+        btn.MouseEnter += (_, _) =>
+        {
+            _hideTimer.Stop();
+            btn.Background = hover;
+            var a = new DoubleAnimation(1.14, TimeSpan.FromMilliseconds(130))
+            { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
+            scale.BeginAnimation(ScaleTransform.ScaleXProperty, a);
+            scale.BeginAnimation(ScaleTransform.ScaleYProperty, a);
+        };
+        btn.MouseLeave += (_, _) =>
+        {
+            btn.Background = normal;
+            var a = new DoubleAnimation(1.0, TimeSpan.FromMilliseconds(150))
+            { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
+            scale.BeginAnimation(ScaleTransform.ScaleXProperty, a);
+            scale.BeginAnimation(ScaleTransform.ScaleYProperty, a);
+        };
+        btn.MouseLeftButtonUp += (_, e) =>
+        {
+            e.Handled = true;
+            if (_busy) return;
+            DispatchSatellite(sat.Action);   // 图标是动作：单击直接执行，不弹二级菜单。
+        };
+        return btn;
+    }
+
+    // ==================================================================
+    //  贴边「小凸起 ↔ 滑出」 + 面板显隐 + 不透明度
+    // ==================================================================
+    /// <summary>收拢（贴边）时场景整体位移：让主球只在屏幕边缘露出一小段。</summary>
+    private double CollapsedShift()
+        => (_side == DockSide.Right ? 1 : -1) * (CanvasSize - Center - Peek + BallSize / 2);
+
+    /// <summary>展开（滑出）时场景整体位移：把磁贴球推到紧贴屏幕边缘（仅留 3px 呼吸边距）。</summary>
+    private double RevealedShift()
+        => (_side == DockSide.Right ? 1 : -1) * (CanvasSize - Center - BallSize / 2 - EdgeMargin);
+
+    /// <summary>贴边展开态：磁贴球与屏幕边缘之间保留的呼吸边距（像素）。</summary>
+    private const double EdgeMargin = 3;
+
+    private void AnimateShift(double to, int ms)
+    {
+        if (ms <= 0)
+        {
+            _sceneShift.BeginAnimation(TranslateTransform.XProperty, null);
+            _sceneShift.X = to;
+            return;
+        }
+        _sceneShift.BeginAnimation(TranslateTransform.XProperty,
+            new DoubleAnimation(to, TimeSpan.FromMilliseconds(ms))
+            { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
+    }
+
+    /// <summary>目标不透明度：贴边收拢时近乎透明；呼出 / 悬停 / 自由漂浮时半透明。</summary>
+    private double TargetOpacity()
+    {
+        if (_state is OrbState.ExitAnimation or OrbState.Destroy)
+            return 1;
+        return (_snapped && !_revealed) ? DockedOpacity : RevealedOpacity;
+    }
+
+    /// <summary>把整窗不透明度动画到当前状态的目标值（吸附近乎透明 ↔ 呼出半透明）。</summary>
+    private void FadeToTargetOpacity(int ms = 200)
+    {
+        BeginAnimation(OpacityProperty, new DoubleAnimation(TargetOpacity(), TimeSpan.FromMilliseconds(ms))
+        { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
+    }
+
+    private void SetOrbitVisible(bool on, bool animate)
+    {
+        if (_orbitHost == null) return;
+        _orbitHost.IsHitTestVisible = on;
+        _orbitHost.BeginAnimation(OpacityProperty, null);
+        _orbitHost.Opacity = 1;
+
+        if (!animate)
+        {
+            // 无动画（启动 / 布局切换）：直接落位。收起时把面板收回主球一侧并隐藏。
+            foreach (var (host, off, dx, dy) in _satellites)
+            {
+                host.BeginAnimation(OpacityProperty, null);
+                host.Opacity = on ? 1 : 0;
+                off.BeginAnimation(TranslateTransform.XProperty, null);
+                off.BeginAnimation(TranslateTransform.YProperty, null);
+                off.X = on ? 0 : -dx;
+                off.Y = on ? 0 : -dy;
+            }
+            return;
+        }
+
+        if (on) AnimateSatellitesIn();
+        else AnimateSatellitesOut();
+    }
+
+    /// <summary>唤醒：面板从主球身后「滑出」并回弹（Spring-like），营造丝滑感。</summary>
+    private void AnimateSatellitesIn()
+    {
+        int i = 0;
+        foreach (var (host, off, dx, dy) in _satellites)
+        {
+            int delay = 45 * i++;
+            var spring = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.4 };
+            var dur = TimeSpan.FromMilliseconds(440);
+            off.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation
+            {
+                From = -dx, To = 0, Duration = dur,
+                BeginTime = TimeSpan.FromMilliseconds(delay), EasingFunction = spring
+            });
+            off.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation
+            {
+                From = -dy, To = 0, Duration = dur,
+                BeginTime = TimeSpan.FromMilliseconds(delay), EasingFunction = spring
+            });
+            host.BeginAnimation(OpacityProperty, new DoubleAnimation
+            {
+                From = 0, To = 1, Duration = TimeSpan.FromMilliseconds(260),
+                BeginTime = TimeSpan.FromMilliseconds(delay),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            });
+        }
+    }
+
+    /// <summary>收起：面板「滑回主球身后」并淡出。</summary>
+    private void AnimateSatellitesOut()
+    {
+        var ease = new CubicEase { EasingMode = EasingMode.EaseIn };
+        foreach (var (host, off, dx, dy) in _satellites)
+        {
+            var dur = TimeSpan.FromMilliseconds(220);
+            off.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation { To = -dx, Duration = dur, EasingFunction = ease });
+            off.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation { To = -dy, Duration = dur, EasingFunction = ease });
+            host.BeginAnimation(OpacityProperty, new DoubleAnimation { To = 0, Duration = TimeSpan.FromMilliseconds(180), EasingFunction = ease });
+        }
+    }
+
+    /// <summary>靠近主球 → 滑出、淡入为半透明并展开面板。</summary>
+    private void Reveal()
+    {
+        if (!_snapped || _revealed) { FadeToTargetOpacity(); return; }
+        _revealed = true;
+        SetOrbitVisible(true, animate: true);
+        AnimateShift(RevealedShift(), 260);
+        FadeToTargetOpacity(220);
+    }
+
+    /// <summary>离开 → 收回成屏幕边缘近乎透明的「小凸起」。</summary>
+    private void Retract()
+    {
+        if (!_snapped || !_revealed) { FadeToTargetOpacity(); return; }
+        _revealed = false;
+        SetOrbitVisible(false, animate: true);
+        AnimateShift(CollapsedShift(), 260);
+        FadeToTargetOpacity(300);
+    }
+
+    /// <summary>光标是否靠近主球（动态热区：收拢时取球体附近，展开时覆盖磁贴 + 面板条带）。</summary>
+    private bool IsCursorNearOrb()
+    {
+        try
+        {
+            var dpi = VisualTreeHelper.GetDpi(this);
+            var p = System.Windows.Forms.Cursor.Position;   // 设备像素
+            double sx = p.X / dpi.DpiScaleX;
+            double sy = p.Y / dpi.DpiScaleY;
+            double cx = Left + Center + _sceneShift.X;
+            double cy = Top + Center;
+            double dx = sx - cx, dy = sy - cy;
+
+            if (_revealed && S.MainBall.ShowSatellite)
+            {
+                // 展开态：圆形热区（主球周边）∪ 面板矩形热区（防止光标移向面板图标时误收回）。
+                double hot = Math.Max(96, BallSize / 2 + 24);
+                if (dx * dx + dy * dy <= hot * hot) return true;
+                if (_bandX1 > _bandX0)
+                {
+                    double canvasX = sx - Left - _sceneShift.X;
+                    double canvasY = sy - Top;
+                    if (canvasX >= _bandX0 && canvasX <= _bandX1
+                        && Math.Abs(canvasY - _bandCy) <= _bandHalfH)
+                        return true;
+                }
+                return false;
+            }
+
+            double h = BallSize / 2 + 20;
+            return dx * dx + dy * dy <= h * h;
+        }
+        catch { return true; }
+    }
+
+    // ==================================================================
+    //  笔刷工厂
+    // ==================================================================
+    /// <summary>控制点的深色玻璃质感：左上亮 → 主色 → 边缘暗。</summary>
+    private static Brush MakeControlBrush(Color core)
     {
         var b = new RadialGradientBrush
         {
-            GradientOrigin = new Point(0.34, 0.26),
-            Center = new Point(0.42, 0.40),
+            GradientOrigin = new Point(0.36, 0.28),
+            Center = new Point(0.44, 0.40),
             RadiusX = 0.78,
             RadiusY = 0.78
         };
-        b.GradientStops.Add(new GradientStop(Lighten(baseColor, 0.42), 0.0));
-        b.GradientStops.Add(new GradientStop(baseColor, 0.55));
-        b.GradientStops.Add(new GradientStop(Darken(baseColor, 0.35), 0.86));
-        b.GradientStops.Add(new GradientStop(glow, 1.0));
+        b.GradientStops.Add(new GradientStop(Lighten(core, 0.45), 0.0));
+        b.GradientStops.Add(new GradientStop(core, 0.45));
+        b.GradientStops.Add(new GradientStop(Darken(core, 0.35), 1.0));
         return b;
     }
 
-    private static Brush MakeDotBrush()
+    // ==================================================================
+    //  状态机（动画目标值唯一出口）
+    // ==================================================================
+    private void GoState(OrbState next)
     {
-        var b = new RadialGradientBrush
-        {
-            GradientOrigin = new Point(0.36, 0.30),
-            Center = new Point(0.45, 0.42),
-            RadiusX = 0.72,
-            RadiusY = 0.72
-        };
-        b.GradientStops.Add(new GradientStop(Color.FromRgb(0xFF, 0xC8, 0xC0), 0.0));
-        b.GradientStops.Add(new GradientStop(Color.FromRgb(0xFF, 0x3B, 0x30), 0.5));
-        b.GradientStops.Add(new GradientStop(Color.FromRgb(0xC0, 0x14, 0x0C), 1.0));
-        return b;
-    }
+        if (_state == next) return;
+        _state = next;
 
-    private Canvas BuildRings(double size)
-    {
-        var canvas = new Canvas { Width = size, Height = size, IsHitTestVisible = false };
-        double c = size / 2;
-        var glow = ParseColor(S.MainBall.GlowColor, Color.FromRgb(0x00, 0x78, 0xD4));
-        for (int k = 0; k < 2; k++)
+        switch (next)
         {
-            double rad = size * (0.30 + k * 0.16);
-            var arc = new Ellipse
-            {
-                Width = rad * 2,
-                Height = rad * 2,
-                Stroke = new SolidColorBrush(glow),
-                StrokeThickness = 1.8,
-                StrokeDashArray = new DoubleCollection { 1.4, 2.6 },
-                StrokeStartLineCap = PenLineCap.Round,
-                StrokeEndLineCap = PenLineCap.Round,
-                Opacity = 0.7 - k * 0.25,
-                RenderTransformOrigin = new Point(0.5, 0.5),
-                RenderTransform = new RotateTransform(0)
-            };
-            Canvas.SetLeft(arc, c - rad);
-            Canvas.SetTop(arc, c - rad);
-            canvas.Children.Add(arc);
-            if (k == 0)
-            {
-                ((RotateTransform)arc.RenderTransform).BeginAnimation(RotateTransform.AngleProperty,
-                    new DoubleAnimation(0, 360, TimeSpan.FromSeconds(7)) { RepeatBehavior = RepeatBehavior.Forever });
-            }
+            case OrbState.Normal:
+                StopBreathing();
+                // 缩放先回落到 1.0，完成后再恢复呼吸，避免呼吸动画（1.0↔1.05）瞬间顶掉回落过渡。
+                var settle = new DoubleAnimation(1.0, TimeSpan.FromMilliseconds(200))
+                { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
+                settle.Completed += (_, _) =>
+                {
+                    if (_state == OrbState.Normal && S.MainBall.Breathing) StartBreathing();
+                };
+                _mainScale.BeginAnimation(ScaleTransform.ScaleXProperty, settle);
+                _mainScale.BeginAnimation(ScaleTransform.ScaleYProperty, settle);
+                UnsubscribeRendering();
+                break;
+
+            case OrbState.Hover:
+                StopBreathing();
+                AnimateScale(1.08, 200, new CubicEase { EasingMode = EasingMode.EaseOut });
+                break;
+
+            case OrbState.Press:
+                StopBreathing();
+                AnimateScale(0.85, 80, new QuadraticEase { EasingMode = EasingMode.EaseOut });
+                break;
+
+            case OrbState.ExitAnimation:
+                UnsubscribeRendering();
+                if (_orbBody != null) _orbBody.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(120)));
+                AnimateScale(0.2, 140, new CubicEase { EasingMode = EasingMode.EaseIn });
+                break;
+
+            case OrbState.Destroy:
+                break;
         }
-        return canvas;
+
     }
 
-    private Grid MakeSatellite(double size, Color color, SatelliteConfig cfg, double cx, double cy)
+    private void SubscribeRendering()
     {
-        var host = new Grid { Width = size, Height = size, Cursor = Cursors.Hand, ToolTip = cfg.Action.ToString() };
-        var ball = new Ellipse
-        {
-            Width = size,
-            Height = size,
-            Fill = MakeGlassBrush(color, color),
-            Effect = new DropShadowEffect { Color = color, BlurRadius = size * 0.7, ShadowDepth = 0, Opacity = 0.5 }
-        };
-        var glyph = new TextBlock
-        {
-            Text = string.IsNullOrEmpty(cfg.Icon) ? "\uE8B7" : cfg.Icon,
-            FontFamily = new FontFamily("Segoe MDL2 Assets, Segoe Fluent Icons"),
-            FontSize = size * 0.42,
-            Foreground = Brushes.White,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            IsHitTestVisible = false
-        };
-        host.Children.Add(ball);
-        host.Children.Add(glyph);
-
-        var scale = new ScaleTransform(0.3, 0.3);
-        var trans = new TranslateTransform(0, 0);
-        var group = new TransformGroup();
-        group.Children.Add(scale);
-        group.Children.Add(trans);
-        host.RenderTransformOrigin = new Point(0.5, 0.5);
-        host.RenderTransform = group;
-        host.Opacity = 0;
-        Canvas.SetLeft(host, cx - size / 2);
-        Canvas.SetTop(host, cy - size / 2);
-        host.Tag = new object[] { scale, trans, cx - size / 2, cy - size / 2 };
-        host.MouseLeftButtonUp += (_, e) => { e.Handled = true; DispatchSatellite(cfg.Action); };
-        host.MouseEnter += (_, _) => _hideTimer.Stop();
-        return host;
+        CompositionTarget.Rendering -= OnProgressRendering;
+        CompositionTarget.Rendering += OnProgressRendering;
     }
 
-    private void DispatchSatellite(SatelliteAction action)
+    private void UnsubscribeRendering() => CompositionTarget.Rendering -= OnProgressRendering;
+
+    // ==================================================================
+    //  动画：缩放 / 点击反馈 / 出现
+    // ==================================================================
+    private void AnimateScale(double to, int ms, IEasingFunction? ease = null)
     {
-        switch (action)
-        {
-            case SatelliteAction.ToggleCollapse: App.Instance.ToggleCollapseNotes(); break;
-            case SatelliteAction.OpenRecentNote: App.Instance.ShowQuickNote(); break;
-            case SatelliteAction.OpenTasks: App.Instance.ShowMainWindow(); break;
-            case SatelliteAction.OpenClips: App.Instance.ShowClipboardPanel(); break;
-            case SatelliteAction.OpenMainWindow: App.Instance.ShowMainWindow(); break;
-            case SatelliteAction.OpenSettings: App.Instance.ShowMainWindow(); break;
-            case SatelliteAction.Exit: PlayDissolveAndExit(); break;
-        }
+        var a = new DoubleAnimation(to, TimeSpan.FromMilliseconds(ms)) { EasingFunction = ease };
+        _mainScale.BeginAnimation(ScaleTransform.ScaleXProperty, a);
+        _mainScale.BeginAnimation(ScaleTransform.ScaleYProperty, a);
     }
 
-    private void RevealSatellites()
+    /// <summary>直接设定缩放（不播动画），用于关闭呼吸/出现动画的场景。</summary>
+    private void SetStableScale(double v)
     {
-        if (_busy) return;
-        int i = 0;
-        foreach (var g in _satellites)
-        {
-            if (g.Tag is not object[] tag) continue;
-            var scale = (ScaleTransform)tag[0];
-            var trans = (TranslateTransform)tag[1];
-            double fx = (double)tag[2], fy = (double)tag[3];
-            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-            var delay = TimeSpan.FromMilliseconds(40 * i++);
-            double dx = Center - fx;
-            double dy = Center - fy;
-            trans.BeginAnimation(TranslateTransform.XProperty,
-                new DoubleAnimation(dx, 0, TimeSpan.FromMilliseconds(240)) { BeginTime = delay, EasingFunction = ease });
-            trans.BeginAnimation(TranslateTransform.YProperty,
-                new DoubleAnimation(dy, 0, TimeSpan.FromMilliseconds(240)) { BeginTime = delay, EasingFunction = ease });
-            scale.BeginAnimation(ScaleTransform.ScaleXProperty,
-                new DoubleAnimation(0.3, 1, TimeSpan.FromMilliseconds(240)) { BeginTime = delay, EasingFunction = ease });
-            scale.BeginAnimation(ScaleTransform.ScaleYProperty,
-                new DoubleAnimation(0.3, 1, TimeSpan.FromMilliseconds(240)) { BeginTime = delay, EasingFunction = ease });
-            g.BeginAnimation(OpacityProperty, new DoubleAnimation(g.Opacity, 1, TimeSpan.FromMilliseconds(220)) { BeginTime = delay });
-        }
-    }
-
-    private void CollapseSatellites(bool instant = false)
-    {
-        foreach (var g in _satellites)
-        {
-            if (instant) { g.Opacity = 0; continue; }
-            g.BeginAnimation(OpacityProperty, new DoubleAnimation(g.Opacity, 0, TimeSpan.FromMilliseconds(200)));
-        }
-    }
-
-    private void HoverMain(bool on)
-    {
-        if (_mainScale == null) return;
-        double to = on ? 1.08 : 1.0;
-        _mainScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(to, TimeSpan.FromMilliseconds(140)));
-        _mainScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(to, TimeSpan.FromMilliseconds(140)));
-        if (_mainBall?.Effect is DropShadowEffect sh)
-            sh.BeginAnimation(DropShadowEffect.OpacityProperty, new DoubleAnimation(on ? 0.95 : 0.6, TimeSpan.FromMilliseconds(140)));
+        _mainScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+        _mainScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+        _mainScale.ScaleX = v;
+        _mainScale.ScaleY = v;
     }
 
     private void StartBreathing()
     {
-        if (_mainScale == null) return;
-        var breathe = new DoubleAnimation(1.0, 1.02, TimeSpan.FromSeconds(1.5))
+        if (!S.MainBall.Breathing) return;
+        var breathe = new DoubleAnimation(1.0, 1.05, TimeSpan.FromMilliseconds(1250))
         {
             AutoReverse = true,
             RepeatBehavior = RepeatBehavior.Forever,
@@ -380,69 +794,175 @@ public partial class FloatingBallWindow : Window
         _mainScale.BeginAnimation(ScaleTransform.ScaleYProperty, breathe);
     }
 
-    // ------------------------------------------------------------ 主球拖动 / 点击 / 长按
+    private void StopBreathing()
+    {
+        _mainScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+        _mainScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+    }
+
+    private void HoverMain(bool on)
+    {
+        if (_busy) return;
+        if (_state is OrbState.Press) return;
+        GoState(on ? OrbState.Hover : OrbState.Normal);
+    }
+
+    /// <summary>按下后的弹性回弹：0.85 → 1.15 → 1.0（超冲）；可指定播放完成后的回调。</summary>
+    private void PlayPressSpring(Action? onCompleted = null)
+    {
+        var kf = new DoubleAnimationUsingKeyFrames();
+        kf.KeyFrames.Add(new LinearDoubleKeyFrame(0.85, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+        kf.KeyFrames.Add(new SplineDoubleKeyFrame(1.15, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(128)))
+        {
+            KeySpline = new KeySpline(0.34, 1.56, 0.64, 1)
+        });
+        kf.KeyFrames.Add(new SplineDoubleKeyFrame(1.0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(320)))
+        {
+            KeySpline = new KeySpline(0.34, 1.56, 0.64, 1)
+        });
+        if (onCompleted != null) kf.Completed += (_, _) => onCompleted();
+        _mainScale.BeginAnimation(ScaleTransform.ScaleXProperty, kf);
+        _mainScale.BeginAnimation(ScaleTransform.ScaleYProperty, kf);
+    }
+
+    /// <summary>点击反馈：不出光芒、不出波纹——只做一次快速「闪烁」（主球淡化后回弹，220ms）。</summary>
+    private void PlayRipple()
+    {
+        if (_orbBody == null) return;
+        var blink = new DoubleAnimationUsingKeyFrames();
+        blink.KeyFrames.Add(new LinearDoubleKeyFrame(1.0, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+        blink.KeyFrames.Add(new LinearDoubleKeyFrame(0.35, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(80))));
+        blink.KeyFrames.Add(new LinearDoubleKeyFrame(1.0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(220))));
+        _orbBody.BeginAnimation(OpacityProperty, blink);
+    }
+
+    /// <summary>首次出现动画：1.2s fade in + scale bounce（淡入到当前状态的目标不透明度）。</summary>
+    private void PlayIntroAnimation()
+    {
+        var kf = new DoubleAnimationUsingKeyFrames();
+        kf.KeyFrames.Add(new LinearDoubleKeyFrame(1.0, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+        kf.KeyFrames.Add(new SplineDoubleKeyFrame(0.6, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(360)))
+        {
+            KeySpline = new KeySpline(0.4, 0, 0.6, 1)
+        });
+        kf.KeyFrames.Add(new SplineDoubleKeyFrame(1.2, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(600)))
+        {
+            KeySpline = new KeySpline(0.34, 1.56, 0.64, 1)
+        });
+        kf.KeyFrames.Add(new SplineDoubleKeyFrame(1.0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(840)))
+        {
+            KeySpline = new KeySpline(0.4, 0, 0.6, 1)
+        });
+        kf.KeyFrames.Add(new LinearDoubleKeyFrame(1.0, KeyTime.FromTimeSpan(IntroDuration)));
+        kf.Completed += (_, _) => { if (S.MainBall.Breathing) StartBreathing(); };
+        _mainScale.BeginAnimation(ScaleTransform.ScaleXProperty, kf);
+        _mainScale.BeginAnimation(ScaleTransform.ScaleYProperty, kf);
+
+        // 整体淡入：吸附态淡到近乎透明，呼出态淡到半透明
+        var fade = new DoubleAnimation(0, TargetOpacity(), TimeSpan.FromMilliseconds(600))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        };
+        BeginAnimation(OpacityProperty, fade);
+    }
+
+    // ==================================================================
+    //  主球：拖动 / 单击（打开 / 关闭主页）
+    // ==================================================================
     private void MainBall_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (_busy) return;
         e.Handled = true;
-        CloseMenu();
-
-        if (e.ClickCount == 2)
-        {
-            App.Instance.ShowClipboardPanel();   // 双击 → 剪贴板面板
-            return;
-        }
 
         _mainPressing = true;
         _longPressFired = false;
-        _mainPress.Restart();
         _dragging = false;
         _dragStartScreen = PointToScreen(e.GetPosition(this));
         var dpi = VisualTreeHelper.GetDpi(this);
         _dragOffsetDevice = new Point(
             _dragStartScreen.X - Left * dpi.DpiScaleX,
             _dragStartScreen.Y - Top * dpi.DpiScaleY);
-        _mainBall?.CaptureMouse();
-        CompositionTarget.Rendering -= OnProgressRendering;
-        CompositionTarget.Rendering += OnProgressRendering;
+        _orbBody?.CaptureMouse();
+        GoState(OrbState.Press);
     }
 
     private void MainBall_MouseMove(object sender, MouseEventArgs e)
     {
+        // 按下后拖拽移动（超过阈值判定为拖动）
         if (!_mainPressing || _busy) return;
         var cur = PointToScreen(e.GetPosition(this));
         double dx = cur.X - _dragStartScreen.X;
         double dy = cur.Y - _dragStartScreen.Y;
         if (!_dragging && Math.Abs(dx) + Math.Abs(dy) > 5) _dragging = true;
-        if (_dragging) MoveToDevice(cur);
+        if (_dragging)
+        {
+            UnsubscribeRendering();
+            MoveToDevice(cur);
+        }
     }
 
     private void MainBall_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
-        if (_mainBall?.IsMouseCaptured == true) _mainBall.ReleaseMouseCapture();
-        CompositionTarget.Rendering -= OnProgressRendering;
+        if (_orbBody?.IsMouseCaptured == true) _orbBody.ReleaseMouseCapture();
+        UnsubscribeRendering();
         _mainPressing = false;
         if (_busy) return;
         e.Handled = true;
 
-        if (_longPressFired) return;
-        if (_dragging) FinishDrag();
-        else App.Instance.ShowQuickNote();   // 单击 → 命令面板（占位用快速便签）
+        if (_dragging)
+        {
+            FinishDrag();
+            GoState(OrbState.Normal);
+            return;
+        }
+
+        // 单击（未拖拽）→ 打开 / 关闭主页
+        // 弹性回弹播完后再切回悬停/普通态，避免状态切换的缩放动画覆盖回弹。
+        PlayRipple();
+        bool backToHover = IsMouseOver;
+        PlayPressSpring(() => GoState(backToHover ? OrbState.Hover : OrbState.Normal));
+        try { App.Instance.ToggleMainWindow(); } catch { }
     }
 
     private void FinishDrag()
     {
-        if (S.MainBall.SnapToEdge)
+        _snapped = S.MainBall.SnapToEdge;
+        if (_snapped)
         {
             double screenMid = SystemParameters.VirtualScreenLeft + SystemParameters.VirtualScreenWidth / 2;
             double cx = Left + Width / 2;
-            double target = cx < screenMid
-                ? SystemParameters.VirtualScreenLeft
-                : SystemParameters.VirtualScreenLeft + SystemParameters.VirtualScreenWidth - Width;
+            bool right = cx >= screenMid;
+            _side = right ? DockSide.Right : DockSide.Left;
+            double target = right
+                ? SystemParameters.VirtualScreenLeft + SystemParameters.VirtualScreenWidth - Width
+                : SystemParameters.VirtualScreenLeft;
             BeginAnimation(LeftProperty, new DoubleAnimation(Left, target, TimeSpan.FromMilliseconds(180))
             { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
             Left = target;
+
+            // 停靠边可能已切换：重建面板 / 控制点使其落到新一侧。
+            RebuildOrbit();
+            if (_controlPointHost != null)
+            {
+                double cs = ControlSize;
+                double ccx = _side == DockSide.Left
+                    ? Center - BallSize / 2 - cs / 2 - 10
+                    : Center + BallSize / 2 + cs / 2 + 10;
+                Canvas.SetLeft(_controlPointHost, ccx - (cs + 16) / 2);
+            }
+
+            // 松手时保持展开；离开后由探测计时器收回成屏幕边缘的「小凸起」。
+            _revealed = true;
+            SetOrbitVisible(true, animate: false);
+            AnimateShift(RevealedShift(), 0);
         }
+        else
+        {
+            // 自由漂浮：整幅可见，面板常显、保持半透明。
+            AnimateShift(0, 0);
+            SetOrbitVisible(true, animate: false);
+        }
+        FadeToTargetOpacity(180);
         SavePosition();
     }
 
@@ -459,7 +979,79 @@ public partial class FloatingBallWindow : Window
         Top = Math.Clamp(top, minT, Math.Max(minT, maxT));
     }
 
-    // ------------------------------------------------------------ 红点长按
+    // ==================================================================
+    //  控制点长按进度（CompositionTarget.Rendering 逐帧驱动）
+    // ==================================================================
+    private void OnProgressRendering(object? sender, EventArgs e)
+    {
+        // 控制点长按：外圈小进度环
+        if (_redPressing && !_longPressFired)
+        {
+            double t = _redPress.Elapsed.TotalMilliseconds / Math.Max(100, S.RedDot.LongPressMs);
+            if (t >= 1.0)
+            {
+                _longPressFired = true;
+                _redPressing = false;
+                UnsubscribeRendering();
+                TriggerCollapseWithFeedback();
+            }
+        }
+    }
+
+    // ==================================================================
+    //  管理控制点
+    // ==================================================================
+    private void RevealControlPoint()
+    {
+        if (_controlPointHost == null) return;
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        _controlPointHost.BeginAnimation(OpacityProperty, new DoubleAnimation(_controlPointHost.Opacity, 1, TimeSpan.FromMilliseconds(180)) { EasingFunction = ease });
+        if (_controlPointScale != null)
+        {
+            _controlPointScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(_controlPointScale.ScaleX, 1, TimeSpan.FromMilliseconds(180)) { EasingFunction = ease });
+            _controlPointScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(_controlPointScale.ScaleY, 1, TimeSpan.FromMilliseconds(180)) { EasingFunction = ease });
+        }
+        UpdateControlPointColor();
+    }
+
+    private void ConcealControlPoint()
+    {
+        if (_controlPointHost == null || _controlPointHost.Opacity <= 0.01) return;
+        var ease = new CubicEase { EasingMode = EasingMode.EaseIn };
+        _controlPointHost.BeginAnimation(OpacityProperty, new DoubleAnimation(_controlPointHost.Opacity, 0, TimeSpan.FromMilliseconds(150)) { EasingFunction = ease });
+        if (_controlPointScale != null)
+        {
+            _controlPointScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(_controlPointScale.ScaleX, 0.8, TimeSpan.FromMilliseconds(150)) { EasingFunction = ease });
+            _controlPointScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(_controlPointScale.ScaleY, 0.8, TimeSpan.FromMilliseconds(150)) { EasingFunction = ease });
+        }
+    }
+
+    /// <summary>管理控制点统一为与主球一致的深色玻璃质感。</summary>
+    private void UpdateControlPointColor(bool animate = true)
+    {
+        if (_controlPointBrush == null) return;
+        var target = ParseColor(S.MainBall.Color, Color.FromRgb(0x0A, 0x0A, 0x0C));
+        if (_controlPointBrush is RadialGradientBrush rgba && animate)
+        {
+            AnimateStopColor(rgba.GradientStops[0], Lighten(target, 0.45));
+            AnimateStopColor(rgba.GradientStops[1], target);
+            if (rgba.GradientStops.Count > 2) AnimateStopColor(rgba.GradientStops[2], Darken(target, 0.35));
+        }
+        else
+        {
+            _controlPointBrush = MakeControlBrush(target);
+            if (_controlPoint != null) _controlPoint.Fill = _controlPointBrush;
+        }
+        if (_controlPoint?.Effect is DropShadowEffect de)
+            de.BeginAnimation(DropShadowEffect.ColorProperty, new ColorAnimation(target, TimeSpan.FromMilliseconds(250)));
+    }
+
+    /// <summary>把渐变停靠点的颜色动画到目标值（from 取当前值，实现平滑过渡）。</summary>
+    private static void AnimateStopColor(GradientStop stop, Color to)
+    {
+        stop.BeginAnimation(GradientStop.ColorProperty, new ColorAnimation(to, TimeSpan.FromMilliseconds(250)));
+    }
+
     private void RedDot_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (_busy) return;
@@ -467,44 +1059,25 @@ public partial class FloatingBallWindow : Window
         _redPressing = true;
         _longPressFired = false;
         _redPress.Restart();
-        _redDot?.CaptureMouse();
-        CompositionTarget.Rendering -= OnProgressRendering;
-        CompositionTarget.Rendering += OnProgressRendering;
+        _controlPointHost?.CaptureMouse();
+        SubscribeRendering();
     }
 
     private void RedDot_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
-        if (_redDot?.IsMouseCaptured == true) _redDot.ReleaseMouseCapture();
-        _redPressing = false;
-        CompositionTarget.Rendering -= OnProgressRendering;
-        SetProgress(0);
+        if (_controlPointHost?.IsMouseCaptured == true) _controlPointHost.ReleaseMouseCapture();
+        UnsubscribeRendering();
         e.Handled = true;
-    }
+        if (_busy) return;
 
-    private void OnProgressRendering(object? sender, EventArgs e)
-    {
+        if (_longPressFired) { _longPressFired = false; return; }
+
+        // 单击 → 最小化全部便签
         if (_redPressing)
         {
-            double t = _redPress.Elapsed.TotalMilliseconds / Math.Max(100, S.RedDot.LongPressMs);
-            SetProgress(Math.Min(1.0, t));
-            if (t >= 1.0 && !_longPressFired)
-            {
-                _longPressFired = true;
-                _redPressing = false;
-                CompositionTarget.Rendering -= OnProgressRendering;
-                SetProgress(0);
-                TriggerCollapseWithFeedback();
-            }
-        }
-        else if (_mainPressing && !_dragging)
-        {
-            if (_mainPress.Elapsed >= MainLongPress && !_longPressFired)
-            {
-                _longPressFired = true;
-                _mainPressing = false;
-                CompositionTarget.Rendering -= OnProgressRendering;
-                PlayDissolveAndExit();
-            }
+            _redPressing = false;
+            try { App.Instance.MinimizeAllNotes(); } catch { }
+            UpdateControlPointColor();
         }
     }
 
@@ -512,150 +1085,72 @@ public partial class FloatingBallWindow : Window
     {
         App.Instance.ToggleCollapseNotes();
         Shake();
+        UpdateControlPointColor();
     }
 
     private void Shake()
     {
-        if (_mainScale == null || _mainBall == null) return;
-        var sb = new Storyboard();
+        StopBreathing();
         var kf = new DoubleAnimationUsingKeyFrames();
         kf.KeyFrames.Add(new LinearDoubleKeyFrame(1.0, KeyTime.FromTimeSpan(TimeSpan.Zero)));
-        kf.KeyFrames.Add(new LinearDoubleKeyFrame(1.08, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(40))));
-        kf.KeyFrames.Add(new LinearDoubleKeyFrame(0.95, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(70))));
-        kf.KeyFrames.Add(new LinearDoubleKeyFrame(1.0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(120))));
-        Storyboard.SetTarget(kf, _mainBall);
-        Storyboard.SetTargetProperty(kf, new PropertyPath("RenderTransform.(ScaleTransform.ScaleX)"));
-        sb.Children.Add(kf);
-        sb.Begin();
+        kf.KeyFrames.Add(new LinearDoubleKeyFrame(1.12, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(40))));
+        kf.KeyFrames.Add(new LinearDoubleKeyFrame(0.94, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(75))));
+        kf.KeyFrames.Add(new LinearDoubleKeyFrame(1.03, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(105))));
+        kf.KeyFrames.Add(new LinearDoubleKeyFrame(1.0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(140))));
+        kf.Completed += (_, _) =>
+        {
+            SetStableScale(_state is OrbState.Hover ? 1.08 : 1.0);
+            if (S.MainBall.Breathing && _state is OrbState.Normal) StartBreathing();
+        };
+        _mainScale.BeginAnimation(ScaleTransform.ScaleXProperty, kf);
+        _mainScale.BeginAnimation(ScaleTransform.ScaleYProperty, kf);
     }
 
-    private Path BuildProgressArc(Point center, double radius)
+    // ==================================================================
+    //  面板开关（右键主球切换）
+    // ==================================================================
+    /// <summary>右键悬浮图标：展开 / 收起动作面板（切换「显示展开面板」开关并即时重建）。</summary>
+    private void ToggleRing()
     {
-        var fig = new PathFigure { StartPoint = new Point(center.X, center.Y - radius), IsClosed = false };
-        var seg = new ArcSegment
-        {
-            Point = new Point(center.X, center.Y - radius),
-            Size = new Size(radius, radius),
-            IsLargeArc = false,
-            SweepDirection = SweepDirection.Clockwise
-        };
-        fig.Segments.Add(seg);
-        var geo = new PathGeometry();
-        geo.Figures.Add(fig);
-        _progressFigure = fig;
-        _progressSeg = seg;
-        return new Path
-        {
-            Data = geo,
-            Stroke = new SolidColorBrush(Color.FromRgb(0xFF, 0x5A, 0x4E)),
-            StrokeThickness = 2.6,
-            StrokeStartLineCap = PenLineCap.Round,
-            StrokeEndLineCap = PenLineCap.Round,
-            IsHitTestVisible = false
-        };
+        S.MainBall.ShowSatellite = !S.MainBall.ShowSatellite;
+        Config.Save();
+        RebuildOrbit();
+        SetOrbitVisible(_revealed, animate: false);
     }
 
-    private void SetProgress(double t)
+    // ==================================================================
+    //  动作分发：单击图标直达「快速」入口
+    //    悬浮图标 → 软件主页；便签 → 快速便签；剪切板 → 剪贴板面板；
+    //    待办 → 快速待办；文件文件夹备注 → 快速文件树备注。
+    // ==================================================================
+    private void DispatchSatellite(SatelliteAction action)
     {
-        if (_progressArc == null || _progressFigure == null || _progressSeg == null) return;
-        double dotD = Math.Max(10, BallSize * 0.22);
-        double cxp = Center + (BallSize / 2) * 0.78;
-        double cyp = Center - (BallSize / 2) * 0.78;
-        double rad = dotD * 0.95;
-        double ang = (-90 + 360 * Math.Clamp(t, 0, 1)) * Math.PI / 180.0;
-        _progressFigure.StartPoint = new Point(cxp, cyp - rad);
-        _progressSeg.Point = new Point(cxp + rad * Math.Cos(ang), cyp + rad * Math.Sin(ang));
-        _progressSeg.Size = new Size(rad, rad);
-        _progressSeg.IsLargeArc = t > 0.5;
-        _progressArc.Opacity = t <= 0.001 ? 0 : 0.95;
-    }
-
-    // ------------------------------------------------------------ 径向菜单
-    private void OpenRadialMenu()
-    {
-        CloseMenu();
-        var canvas = new Canvas { Width = 220, Height = 220 };
-        var border = new Border
+        switch (action)
         {
-            Background = new SolidColorBrush(Color.FromArgb(0xEE, 0x20, 0x20, 0x22)),
-            CornerRadius = new CornerRadius(110),
-            Child = canvas,
-            Width = 220,
-            Height = 220,
-            Effect = (Effect)FindResource("ShadowPopup")
-        };
-
-        var items = new (string text, SatelliteAction action)[]
-        {
-            ("新建便签", SatelliteAction.OpenRecentNote),
-            ("新建待办", SatelliteAction.OpenTasks),
-            ("打开主窗口", SatelliteAction.OpenMainWindow),
-            ("设置", SatelliteAction.OpenSettings),
-            ("退出", SatelliteAction.Exit),
-        };
-        double rr = 78;
-        for (int i = 0; i < items.Length; i++)
-        {
-            double ang = (-90 + 360.0 * i / items.Length) * Math.PI / 180.0;
-            double x = 110 + rr * Math.Cos(ang);
-            double y = 110 + rr * Math.Sin(ang);
-            var btn = new Button
-            {
-                Content = items[i].text,
-                Width = 84,
-                Height = 30,
-                FontSize = 12,
-                Foreground = Brushes.White,
-                Background = new SolidColorBrush(Color.FromArgb(0xCC, 0x3A, 0x3A, 0x3E)),
-                BorderThickness = new Thickness(0),
-                Cursor = Cursors.Hand,
-                Tag = items[i].action
-            };
-            btn.Click += (s, _) =>
-            {
-                var act = (SatelliteAction)((Button)s!).Tag;
-                CloseMenu();
-                DispatchSatellite(act);
-            };
-            Canvas.SetLeft(btn, x - 42);
-            Canvas.SetTop(btn, y - 15);
-            canvas.Children.Add(btn);
+            case SatelliteAction.ToggleCollapse: App.Instance.ToggleCollapseNotes(); UpdateControlPointColor(); break;
+            case SatelliteAction.OpenRecentNote: App.Instance.ShowQuickNote(); break;          // 快速便签
+            case SatelliteAction.OpenTasks: App.Instance.ShowQuickTask(); break;               // 快速待办
+            case SatelliteAction.OpenClips: App.Instance.ShowClipboardPanel(); break;          // 剪切板
+            case SatelliteAction.OpenFileNotes: App.Instance.ShowAnnotationPopup(); break;     // 快速文件树备注
+            case SatelliteAction.OpenMainWindow: App.Instance.ShowMainWindow(); break;         // 软件主页
+            case SatelliteAction.OpenSettings: App.Instance.ShowMainWindow(NavSection.Settings); break;
+            case SatelliteAction.Exit: PlayDissolveAndExit(); break;
         }
-
-        _menu = new Popup
-        {
-            Child = border,
-            PlacementTarget = _mainBall ?? (UIElement)this,
-            Placement = PlacementMode.Center,
-            StaysOpen = false,
-            AllowsTransparency = true,
-            PopupAnimation = PopupAnimation.Fade
-        };
-        _menu.Closed += (_, _) => _menuOpen = false;
-        _menuOpen = true;
-        _menu.IsOpen = true;
     }
 
-    private void CloseMenu()
-    {
-        try { if (_menu != null) _menu.IsOpen = false; } catch { }
-        _menu = null;
-        _menuOpen = false;
-    }
-
-    // ------------------------------------------------------------ 粒子消散退出
+    // ==================================================================
+    //  粒子消散退出
+    // ==================================================================
     private void PlayDissolveAndExit()
     {
         if (_busy) return;
         _busy = true;
-        CloseMenu();
+        GoState(OrbState.ExitAnimation);
 
         var palette = new List<Color>
         {
-            ParseColor(S.MainBall.GlowColor, Color.FromRgb(0x00, 0x78, 0xD4)),
-            Color.FromRgb(0xFF, 0x3B, 0x30),
-            Color.FromRgb(0x2E, 0x86, 0xFF),
-            Colors.White
+            Colors.White, Colors.White, Colors.White, Colors.White,
+            Color.FromRgb(0xE0, 0x45, 0x45)
         };
 
         var ballRect = new Rect(Left + (Center - BallSize / 2), Top + (Center - BallSize / 2), BallSize, BallSize);
@@ -664,14 +1159,20 @@ public partial class FloatingBallWindow : Window
         win.Show();
         win.Play(ballRect, palette, S.Particle, () =>
         {
+            _state = OrbState.Destroy;
             try { App.Instance.Shutdown(); } catch { Application.Current?.Shutdown(); }
         });
 
-        Hide();
+        var hideTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(160) };
+        hideTimer.Tick += (_, _) => { hideTimer.Stop(); Hide(); };
+        hideTimer.Start();
     }
 
-    // ------------------------------------------------------------ 位置 / 全屏
-    private void RestorePosition()
+    // ==================================================================
+    //  位置 / 全屏
+    // ==================================================================
+    /// <summary>根据记忆位置推断贴边方向（屏幕中线左 / 右），默认右侧。</summary>
+    private DockSide DetermineSide()
     {
         try
         {
@@ -679,15 +1180,61 @@ public partial class FloatingBallWindow : Window
             if (!string.IsNullOrWhiteSpace(pos))
             {
                 var parts = pos.Split(',');
-                if (parts.Length == 2 && double.TryParse(parts[0], out var l) && double.TryParse(parts[1], out var t))
+                if (parts.Length == 2 && double.TryParse(parts[0], out var l))
                 {
-                    Left = l; Top = t; return;
+                    double midX = SystemParameters.VirtualScreenLeft + SystemParameters.VirtualScreenWidth / 2;
+                    return l < midX ? DockSide.Left : DockSide.Right;
                 }
             }
         }
         catch { }
-        Left = SystemParameters.WorkArea.Right - Width - 24;
-        Top = SystemParameters.WorkArea.Bottom - Height - 24;
+        return DockSide.Right;
+    }
+
+    private void RestorePosition()
+    {
+        _snapped = S.MainBall.SnapToEdge;
+        _revealed = true;
+        _side = DetermineSide();
+
+        double minT = SystemParameters.VirtualScreenTop;
+        double maxT = minT + SystemParameters.VirtualScreenHeight - Height;
+        double top = SystemParameters.WorkArea.Top + 40;
+
+        try
+        {
+            var pos = S.Position;
+            if (!string.IsNullOrWhiteSpace(pos))
+            {
+                var parts = pos.Split(',');
+                if (parts.Length == 2 && double.TryParse(parts[1], out var t))
+                    top = t;
+            }
+        }
+        catch { }
+
+        Top = Math.Clamp(top, minT, Math.Max(minT, maxT));
+
+        if (_snapped)
+        {
+            // 贴边停靠：窗口整幅落在屏内，用「场景位移」把主球推到屏幕边缘形成小凸起。
+            Left = _side == DockSide.Right
+                ? SystemParameters.VirtualScreenLeft + SystemParameters.VirtualScreenWidth - Width
+                : SystemParameters.VirtualScreenLeft;
+            _revealed = false;
+            SetOrbitVisible(false, animate: false);
+            AnimateShift(CollapsedShift(), 0);
+        }
+        else
+        {
+            // 自由漂浮：整幅可见，面板常显、保持半透明。
+            double minL = SystemParameters.VirtualScreenLeft;
+            double maxL = minL + SystemParameters.VirtualScreenWidth - Width;
+            Left = Math.Clamp(SystemParameters.WorkArea.Right - Width - 28, minL, Math.Max(minL, maxL));
+            AnimateShift(0, 0);
+            SetOrbitVisible(true, animate: false);
+        }
+        FadeToTargetOpacity(0);
     }
 
     private void SavePosition()
@@ -699,17 +1246,26 @@ public partial class FloatingBallWindow : Window
     {
         try
         {
+            if (_state is OrbState.ExitAnimation) return;
+
             if (Native.SHQueryUserNotificationState(out var state) == 0)
             {
                 bool full = state == Native.QUERY_USER_NOTIFICATION_STATE.QUNS_RUNNING_D3D_FULL_SCREEN
                          || state == Native.QUERY_USER_NOTIFICATION_STATE.QUNS_PRESENTATION_MODE;
-                Visibility = full ? Visibility.Hidden : Visibility.Visible;
+                var target = full ? Visibility.Hidden : Visibility.Visible;
+                if (Visibility != target)
+                {
+                    Visibility = target;
+                    if (!full) GoState(OrbState.Normal);   // 恢复显示时归位
+                }
             }
         }
         catch { }
     }
 
-    // ------------------------------------------------------------ 小工具
+    // ==================================================================
+    //  小工具
+    // ==================================================================
     private static ImageBrush? LoadPackImage(string relative)
     {
         try

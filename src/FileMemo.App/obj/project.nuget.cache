@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "awtD/duorCo=",
+  "dgSpecHash": "jnSkWkM0kSA=",
   "success": true,
-  "projectFilePath": "C:\\Users\\sfann\\Desktop\\SuperNote\\FileMemo\\FileMemo\\src\\FileMemo.App\\FileMemo.App.csproj",
+  "projectFilePath": "C:\\Users\\sfann\\Desktop\\新建文件夹\\src\\FileMemo.App\\FileMemo.App.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\sfann\\.nuget\\packages\\markdig\\0.37.0\\markdig.0.37.0.nupkg.sha512",
     "C:\\Users\\sfann\\.nuget\\packages\\microsoft.data.sqlite\\8.0.8\\microsoft.data.sqlite.8.0.8.nupkg.sha512",

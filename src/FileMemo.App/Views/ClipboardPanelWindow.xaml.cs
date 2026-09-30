@@ -10,6 +10,7 @@ public partial class ClipboardPanelWindow : Window
     public ClipboardPanelWindow()
     {
         InitializeComponent();
+        SourceInitialized += (_, _) => DwmService.ApplyShellTheme(this);
         Loaded += (_, _) => { Reload(); SearchBox.Focus(); };
     }
 
