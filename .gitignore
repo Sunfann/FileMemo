@@ -1,0 +1,88 @@
+# ===== .NET / WPF 构建产物 =====
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+build/
+bld/
+[Ll]og/
+[Ll]ogs/
+publish/
+*.publishsettings
+*.pubxml
+*.pubxml.user
+
+# ===== Visual Studio / VS Code =====
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.rsuser
+*.userprefs
+*.code-workspace
+
+# ===== JetBrains Rider / IntelliJ =====
+.idea/
+*.sln.iml
+*.DotSettings.user
+
+# ===== NuGet =====
+*.nupkg
+*.snupkg
+packages/
+!packages/build/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+*.nuget.props
+*.nuget.targets
+*.nuspec.user
+
+# ===== 测试与覆盖率 =====
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.trx
+*.coverage
+*.coveragexml
+coverage/
+TestResults/
+
+# ===== 操作系统生成文件 =====
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# ===== FileMemo 本地数据与私密内容 =====
+# SQLite 主库 / 预写日志 / 附件不入库
+supernote.db
+supernote.db-shm
+supernote.db-wal
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.conflict
+attachments/
+settings.json
+
+# ===== 临时与日志 =====
+*.log
+*.tmp
+*.bak
+*.cache
+*.swp
+*~
+
+# ===== 编辑器本地配置 =====
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json

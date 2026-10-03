@@ -39,6 +39,7 @@ public sealed partial class Database : IDisposable
         cmd.ExecuteNonQuery();
         ApplyP1Migrations(c);
         ApplyP2Migrations(c);
+        ApplyReminderMigrations(c);
         EnsureFts(c);
     }
 

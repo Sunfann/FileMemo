@@ -3,7 +3,43 @@
 > 每份文件都值得一纸文笺：图文备注 · 五重指纹追踪 · 文件树 · Everything 联合搜索
 
 > 在 Windows 文件系统之上，增加一层"人的上下文"。
-> 本仓库是依据《文笺 FileMemo APP 需求文档（优化整合版 v2.0）》落地的 **P0 MVP** 源码工程。
+<p align="center">
+  <img src="src/FileMemo.App/Assets/appicon.png" width="160" alt="文笺 FileMemo 应用图标"/>
+</p>
+
+> 本仓库是依据《文笺 FileMemo APP 需求文档（优化整合版 v2.0）》落地的 **v1.0 正式版** 源码工程。
+
+---
+
+## 界面与视觉预览
+
+**应用图标**（3D 文件夹 + 绿色便签）
+
+<p align="center">
+  <img src="src/FileMemo.App/Assets/appicon.png" width="160" alt="应用图标"/>
+  &nbsp;&nbsp;&nbsp;
+  <img src="src/FileMemo.App/Assets/appicon_thumbnails.png" width="280" alt="图标与缩略图"/>
+</p>
+
+**桌面悬浮球**（主球贴图 + 磁贴图标）
+
+<p align="center">
+  <img src="src/FileMemo.App/Assets/ball.png" width="150" alt="悬浮球主球贴图"/>
+  &nbsp;&nbsp;&nbsp;
+  <img src="src/FileMemo.App/Assets/ball_tile_icon.png" width="90" alt="悬浮球磁贴图标"/>
+</p>
+
+**展开面板动作图标**（便签 / 剪贴板 / 待办 / 文件·文件夹备注）
+
+<p align="center">
+  <img src="src/FileMemo.App/Assets/panel_note.png" width="72" alt="便签"/>
+  &nbsp;
+  <img src="src/FileMemo.App/Assets/panel_clipboard.png" width="72" alt="剪贴板"/>
+  &nbsp;
+  <img src="src/FileMemo.App/Assets/panel_task.png" width="72" alt="待办"/>
+  &nbsp;
+  <img src="src/FileMemo.App/Assets/panel_fileref.png" width="72" alt="文件/文件夹备注"/>
+</p>
 
 ---
 
@@ -62,7 +98,7 @@ cd scripts
 
 ---
 
-## 四、MVP 已实现功能（对应需求 P0）
+## 四、v1.0 已实现功能
 
 | 模块 | 状态 | 说明 |
 | --- | --- | --- |
@@ -73,7 +109,7 @@ cd scripts
 | 多重指纹 | ✅ | 主指纹（卷 GUID + NTFS File ID）+ 辅助指纹（路径/大小/时间/哈希） |
 | 文件树 | ✅ | 按备注覆盖聚合，备注图标 / 状态 / 待办数 |
 | Everything 联合搜索 | ✅ | 调用 es.exe；未安装自动降级到内置索引 |
-| 资源管理器集成 | ✅ | 右键菜单脚本 + **全局快捷键呼出备注弹窗**（对选中文件/文件夹直接备注 / 回显已有备注）；内嵌叠加面板为 P1 |
+| 资源管理器集成 | ✅ | 右键菜单脚本 + **全局快捷键呼出备注弹窗**（对选中文件/文件夹直接备注 / 回显已有备注）；内嵌叠加面板为后续版本规划 |
 | 桌面 Widget | ✅ | 快速便签 / 待办 / 剪贴板 |
 | 统一对象模型 | ✅ | Record / Clip / Task / FileRef / Annotation / Fingerprint / Timeline / Link |
 | 本地 SQLite + 分级加密 | ✅ | DPAPI 加密敏感字段；普通便签可明文 |
@@ -94,7 +130,7 @@ cd scripts
 2. 无选中项时依次回退：剪贴板中的文件列表 → 手动输入路径对话框；
 3. 弹窗在鼠标附近出现，保存时自动建立/更新**指纹**，保证日后重命名/移动仍能关联。
 
-其它快捷键（可在"设置"中修改）：
+其它快捷键（可在\"设置\"中修改）：
 
 | 快捷键 | 功能 |
 | --- | --- |
@@ -102,7 +138,7 @@ cd scripts
 | `Ctrl+Alt+N` | 快速便签 |
 | `Ctrl+Alt+V` | 剪贴板面板 |
 
-> 右键菜单亦可直接呼出：注册右键菜单脚本后，对文件/文件夹点"添加/查看文笺 FileMemo"即触发备注弹窗。
+> 右键菜单亦可直接呼出：注册右键菜单脚本后，对文件/文件夹点\"添加/查看文笺 FileMemo\"即触发备注弹窗。
 
 ---
 
@@ -145,7 +181,7 @@ FileMemo/
 
 ---
 
-## 七、P1 功能（本轮新增）
+## 七、v1.0 增强功能
 
 | 模块 | 实现位置 | 说明 |
 | --- | --- | --- |
@@ -160,9 +196,9 @@ FileMemo/
 | 双向链接 / 反向链接 | `Services/LinkService.cs` | 解析 `[[标题]]`，维护 `record_link`，提供反向链接查询 |
 | 时间线可配置 | `Settings.TimelineEnabledCategories` | 默认仅备注编辑 + 文件关键变化，可开启完整事件流 |
 
-以上 P1 开关均可在**设置**面板中调整（设置区已新增「追踪与迁移 / sidecar / OCR / 云同步 / 副本继承 / 时间线」分组）。
+以上增强功能开关均可在**设置**面板中调整（设置区已新增「追踪与迁移 / sidecar / OCR / 云同步 / 副本继承 / 时间线」分组）。
 
-### 桌面文件 / 文件夹备注（本轮修复）
+### 桌面文件 / 文件夹备注（已修复）
 
 早期版本在**桌面**上添加备注时会误报「无法直接添加」并跳转手动输入路径，根因是
 `Shell.Application.FindWindowSW` 的 `pHWND` 参数为 `[out] LONG*`，直接传普通 `int` 会封送失败、
@@ -174,7 +210,7 @@ FileMemo/
 
 ---
 
-## 八、P2 功能（本轮新增）
+## 八、v1.0 高级功能（可选模块）
 
 | 模块 | 实现位置 | 说明 |
 | --- | --- | --- |
@@ -184,18 +220,22 @@ FileMemo/
 | 插件系统 | `Services/PluginService.cs` | `IPlugin` / `PluginContext` / `PluginHost`；`AssemblyLoadContext`（可卸载）隔离加载，单插件失败不影响主程序；插件目录可配置 |
 | 后台服务（可选） | `Services/BackgroundServiceHost.cs` + `scripts/install-service.ps1` | `FileMemo.exe --service` 无界面模式：大规模 USN Journal 追踪 + 网络盘 / NAS 监控 + 开机索引（含图片向量）；脚本以管理员注册 Windows 服务（sc.exe / NSSM） |
 
-以上 P2 开关均在**设置**面板的「P2 · 关系图谱 / 知识网络 / 图片向量 / 团队协作 / 插件系统 / 后台服务」分组中调整；
+以上高级功能开关均在**设置**面板的「关系图谱 / 知识网络 / 图片向量 / 团队协作 / 插件系统 / 后台服务」分组中调整；
 并提供「打开知识网络」「重建向量索引」按钮。
 
-> P2 数据表：`image_vector` · `plugin` · `collab_session`（见 `Data/Database.P2.cs`）。
+> 高级功能数据表：`image_vector` · `plugin` · `collab_session`（见 `Data/Database.P2.cs`）。
 
 ---
 
-## 八·补、应用图标与桌面悬浮球（本轮新增）
+## 八·补、应用图标与桌面悬浮球
 
 **应用图标**：全应用统一为需求指定的「3D 文件夹 + 绿色便签」图标。
 - `Assets/appicon.png`（窗口图标，通过 `App.xaml` 的全局 `Window` 样式设置）
 - `Assets/appicon.ico`（EXE 可执行文件图标，`FileMemo.App.csproj` 的 `<ApplicationIcon>`）
+
+<p align="center">
+  <img src="src/FileMemo.App/Assets/appicon.png" width="140" alt="应用图标"/>
+</p>
 
 **桌面悬浮球**（`Views/FloatingBallWindow.xaml(.cs)`，可个性化）：
 - 常驻桌面、置顶、可整窗拖动、自动记忆位置、点击空白可穿透

@@ -111,6 +111,18 @@ public sealed class SettingsService
     public int FloatingBallLongPressMs { get; set; } = 650;      // 长按判定阈值 ms
     public string FloatingBallPosition { get; set; } = "";       // 记忆位置 "Left,Top"
 
+    // ---- 待办提醒 ----
+    public bool ReminderEnabled { get; set; } = true;            // 到点弹出待办提醒
+    public int ReminderCheckSeconds { get; set; } = 30;         // 后台检查间隔（10~600 秒）
+    public int ReminderAdvanceMinutes { get; set; } = 0;        // 提前多少分钟提醒（0=准点）
+    public bool ReminderSnoozeEnabled { get; set; } = true;     // 允许「稍后提醒」
+
+    // ---- 窗口固定（展开面板打开的窗口）----
+    public bool PinQuickNote { get; set; } = false;   // 快速便签窗口固定
+    public bool PinQuickTask { get; set; } = false;   // 快速待办窗口固定
+    public bool PinClipboard { get; set; } = false;   // 剪贴板面板窗口固定
+    public bool PinFileNote { get; set; } = false;    // 文件/文件夹备注窗口固定
+
     [JsonIgnore]
     public string DatabasePath => Path.Combine(Dir, "supernote.db");
 

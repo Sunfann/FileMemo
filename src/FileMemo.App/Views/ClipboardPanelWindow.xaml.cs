@@ -11,7 +11,22 @@ public partial class ClipboardPanelWindow : Window
     {
         InitializeComponent();
         SourceInitialized += (_, _) => DwmService.ApplyShellTheme(this);
-        Loaded += (_, _) => { Reload(); SearchBox.Focus(); };
+        Loaded += (_, _) => { Reload(); SearchBox.Focus(); RefreshPinVisual(); };
+        WindowPin.ApplyOnLoad(this, PinKind.Clipboard);   // 恢复上次的固定状态
+    }
+
+    private void WindowPin_Click(object sender, RoutedEventArgs e)
+    {
+        WindowPin.Toggle(this, PinKind.Clipboard);
+        RefreshPinVisual();
+    }
+
+    private void RefreshPinVisual()
+    {
+        bool pinned = WindowPin.IsPinned(this);
+        PinBtn.ToolTip = pinned ? "已固定（点击取消）" : "固定窗口（置顶，不随批量收纳 / 最小化）";
+        try { PinIcon.Stroke = (System.Windows.Media.Brush)FindResource(pinned ? "PrimaryBrush" : "TextSecondaryBrush"); }
+        catch { }
     }
 
     private void Reload(string? search = null)

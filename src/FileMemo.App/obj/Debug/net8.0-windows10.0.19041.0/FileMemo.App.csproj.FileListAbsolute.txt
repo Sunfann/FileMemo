@@ -212,3 +212,5 @@ C:\Users\sfann\Desktop\新建文件夹\src\FileMemo.App\obj\Debug\net8.0-windows
 C:\Users\sfann\Desktop\新建文件夹\src\FileMemo.App\obj\Debug\net8.0-windows10.0.19041.0\ref\FileMemo.dll
 C:\Users\sfann\Desktop\新建文件夹\src\FileMemo.App\obj\Debug\net8.0-windows10.0.19041.0\Views\QuickTaskWindow.baml
 C:\Users\sfann\Desktop\新建文件夹\src\FileMemo.App\obj\Debug\net8.0-windows10.0.19041.0\Views\QuickTaskWindow.g.cs
+C:\Users\sfann\Desktop\新建文件夹\src\FileMemo.App\obj\Debug\net8.0-windows10.0.19041.0\Views\ReminderWindow.baml
+C:\Users\sfann\Desktop\新建文件夹\src\FileMemo.App\obj\Debug\net8.0-windows10.0.19041.0\Views\ReminderWindow.g.cs

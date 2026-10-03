@@ -30,12 +30,18 @@
                     <TextBlock x:Name="HeaderHint" Style="{StaticResource TextCaption}"
                                Margin="0,2,0,0" />
                 </StackPanel>
-                <Button HorizontalAlignment="Right" VerticalAlignment="Top"
-                        Style="{StaticResource CaptionButton}" Width="30" Height="28"
-                        Click="Close_Click" ToolTip="关闭">
-                    <Path Style="{StaticResource IconSmall}" Data="{StaticResource IconClose}"
-                          Stroke="{DynamicResource TextPrimaryBrush}" />
-                </Button>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+                    <Button x:Name="PinBtn" Style="{StaticResource CaptionButton}" Width="28" Height="28" Margin="0,0,2,0"
+                            ToolTip="固定窗口（置顶，不随批量收纳 / 最小化）" Click="Pin_Click">
+                        <Path x:Name="PinIcon" Style="{StaticResource IconSmall}" Data="{StaticResource IconPin}"
+                              Stroke="{DynamicResource TextSecondaryBrush}" />
+                    </Button>
+                    <Button Style="{StaticResource CaptionButton}" Width="30" Height="28"
+                            Click="Close_Click" ToolTip="关闭">
+                        <Path Style="{StaticResource IconSmall}" Data="{StaticResource IconClose}"
+                              Stroke="{DynamicResource TextPrimaryBrush}" />
+                    </Button>
+                </StackPanel>
             </Grid>
 
             <!-- 底部按钮 -->

@@ -130,6 +130,22 @@ public sealed class TaskItem : ObservableEntity
     public DateTime? DueAt { get; set; }
     public string RepeatRule { get; set; } = "";
     public int Progress { get; set; }
+
+    /// <summary>提醒时间：到点弹出提醒（为空则不提醒）。</summary>
+    public DateTime? RemindAt { get; set; }
+    /// <summary>本轮提醒是否已触发，避免重复弹出。</summary>
+    public bool Reminded { get; set; }
+
+    /// <summary>提醒时间的文本编辑代理（yyyy-MM-dd HH:mm），供详情编辑框双向绑定；留空即清除提醒。</summary>
+    public string RemindInput
+    {
+        get => RemindAt?.ToString("yyyy-MM-dd HH:mm") ?? "";
+        set
+        {
+            if (string.IsNullOrWhiteSpace(value)) { RemindAt = null; Reminded = false; return; }
+            if (DateTime.TryParse(value.Trim(), out var dt)) { RemindAt = dt; Reminded = false; }
+        }
+    }
     public string Owner { get; set; } = "";
     public string Tags { get; set; } = "";
 
@@ -148,6 +164,10 @@ public sealed class TaskItem : ObservableEntity
         _ => "中"
     };
     public string DueLabel => DueAt?.ToString("MM-dd HH:mm") ?? "";
+
+    /// <summary>提醒时间标签（供列表显示），无提醒时为空。</summary>
+    public string RemindLabel => RemindAt?.ToString("MM-dd HH:mm") ?? "";
+    public bool HasReminder => RemindAt.HasValue;
 }
 
 /// <summary>文件 / 文件夹的逻辑引用，承载多重指纹。</summary>

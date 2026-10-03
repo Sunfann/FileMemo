@@ -61,6 +61,9 @@ public partial class App : Application
     public CollaborationService Collaboration { get; private set; } = null!;
     public PluginHost Plugins { get; private set; } = null!;
 
+    // ---- 待办提醒服务 ----
+    public ReminderService Reminders { get; private set; } = null!;
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -190,6 +193,15 @@ public partial class App : Application
             }
         }
         catch (Exception ex) { LogCrash("Plugins", ex); }
+
+        // ---- 待办提醒：到点弹出托盘气泡 + 提醒窗口 ----
+        try
+        {
+            Reminders = new ReminderService(Repo, Settings);
+            Reminders.TaskDue += t => Dispatcher.Invoke(() => ShowTaskReminder(t));
+            Reminders.Start();
+        }
+        catch (Exception ex) { LogCrash("Reminders", ex); }
 
         try { BuildTray(); }
         catch (Exception ex) { LogCrash("Tray", ex); }
@@ -367,11 +379,30 @@ public partial class App : Application
         };
     }
 
-    public void ShowQuickNote() => RegisterNote(new QuickNoteWindow());
-    /// <summary>快速待办：悬浮图标「待办」单击呼出的轻量录入框（QuickTaskWindow）。</summary>
+    public void ShowQuickNote() => RegisterNote(new QuickNoteWindow());    /// <summary>快速待办：悬浮图标「待办」单击呼出的轻量录入框（QuickTaskWindow）。</summary>
     public void ShowQuickTask() => RegisterNote(new QuickTaskWindow());
     public void ShowClipboardPanel() => new ClipboardPanelWindow().Show();
     public void ShowWidget() => RegisterNote(new WidgetWindow());
+
+    /// <summary>待办到点：托盘气泡提示 + 弹出提醒窗口（可稍后提醒 / 标记完成）。</summary>
+    private void ShowTaskReminder(Models.TaskItem t)
+    {
+        try
+        {
+            _tray?.ShowBalloonTip(5000, "待办提醒",
+                string.IsNullOrWhiteSpace(t.Title) ? "(无标题待办)" : t.Title,
+                System.Windows.Forms.ToolTipIcon.Info);
+        }
+        catch { }
+
+        try
+        {
+            var w = new Views.ReminderWindow(t) { Topmost = true };
+            w.Show();
+            w.Activate();
+        }
+        catch (Exception ex) { LogCrash("ShowTaskReminder", ex); }
+    }
 
     /// <summary>打开 / 关闭主页：主窗口可见时关闭（或按「最小化到托盘」设置隐藏），否则唤出。供悬浮图标单击使用。</summary>
     public void ToggleMainWindow()
@@ -513,6 +544,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         try { _clipboard?.Dispose(); } catch { }
+        try { Reminders?.Dispose(); } catch { }
         try { _watcher?.Dispose(); } catch { }
         try { Hotkeys?.Dispose(); } catch { }
         try { _ball?.Close(); } catch { }

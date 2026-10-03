@@ -304,6 +304,8 @@ public sealed partial class Repository
                 DueAt = DN(Str(r, "due_at")),
                 RepeatRule = Str(r, "repeat_rule"),
                 Progress = (int)Num(r, "progress"),
+                RemindAt = DN(Str(r, "remind_at")),
+                Reminded = Num(r, "reminded") == 1,
                 Owner = Str(r, "owner"),
                 Tags = Str(r, "tags"),
                 FileRefId = NullableStr(r, "file_ref_id"),
@@ -319,12 +321,12 @@ public sealed partial class Repository
         using var c = _db.Open();
         using var cmd = c.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO task(id,title,description,state,done,priority,due_at,repeat_rule,progress,owner,tags,file_ref_id,linked_record_id,created_at)
-            VALUES($id,$title,$desc,$state,$done,$pri,$due,$rep,$prog,$owner,$tags,$fr,$lr,$ca)
+            INSERT INTO task(id,title,description,state,done,priority,due_at,repeat_rule,progress,owner,tags,file_ref_id,linked_record_id,created_at,remind_at,reminded)
+            VALUES($id,$title,$desc,$state,$done,$pri,$due,$rep,$prog,$owner,$tags,$fr,$lr,$ca,$ra,$rm)
             ON CONFLICT(id) DO UPDATE SET
               title=$title, description=$desc, state=$state, done=$done, priority=$pri,
               due_at=$due, repeat_rule=$rep, progress=$prog, owner=$owner, tags=$tags,
-              file_ref_id=$fr, linked_record_id=$lr;
+              file_ref_id=$fr, linked_record_id=$lr, remind_at=$ra, reminded=$rm;
             """;
         AddParam(cmd, "$id", t.Id);
         AddParam(cmd, "$title", t.Title);
@@ -340,6 +342,54 @@ public sealed partial class Repository
         AddParam(cmd, "$fr", t.FileRefId);
         AddParam(cmd, "$lr", t.LinkedRecordId);
         AddParam(cmd, "$ca", S(t.CreatedAt));
+        AddParam(cmd, "$ra", S(t.RemindAt));
+        AddParam(cmd, "$rm", t.Reminded ? 1 : 0);
+        cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>取所有「未完成、已设提醒、到点或已过期、且本轮尚未提醒」的待办。</summary>
+    public List<TaskItem> GetTasksDueForReminder(DateTime now)
+    {
+        var list = new List<TaskItem>();
+        using var c = _db.Open();
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = "SELECT * FROM task WHERE done=0 AND reminded=0 " +
+                          "AND remind_at IS NOT NULL AND remind_at<>'' AND remind_at<=$now " +
+                          "ORDER BY remind_at ASC";
+        AddParam(cmd, "$now", S(now));
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            list.Add(new TaskItem
+            {
+                Id = r.GetString(r.GetOrdinal("id")),
+                Title = Str(r, "title"),
+                Description = Str(r, "description"),
+                State = (TaskState)Num(r, "state"),
+                Done = Num(r, "done") == 1,
+                Priority = (Priority)Num(r, "priority"),
+                DueAt = DN(Str(r, "due_at")),
+                RepeatRule = Str(r, "repeat_rule"),
+                Progress = (int)Num(r, "progress"),
+                RemindAt = DN(Str(r, "remind_at")),
+                Reminded = Num(r, "reminded") == 1,
+                Owner = Str(r, "owner"),
+                Tags = Str(r, "tags"),
+                FileRefId = NullableStr(r, "file_ref_id"),
+                LinkedRecordId = NullableStr(r, "linked_record_id"),
+                CreatedAt = D(Str(r, "created_at"))
+            });
+        }
+        return list;
+    }
+
+    /// <summary>标记某待办本轮提醒已触发，避免重复弹出。</summary>
+    public void MarkTaskReminded(string id)
+    {
+        using var c = _db.Open();
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = "UPDATE task SET reminded=1 WHERE id=$id";
+        AddParam(cmd, "$id", id);
         cmd.ExecuteNonQuery();
     }
 

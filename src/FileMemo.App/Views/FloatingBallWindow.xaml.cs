@@ -454,10 +454,25 @@ public partial class FloatingBallWindow : Window
             color = Color.FromRgb(0xC9, 0xD1, 0xDC);
         var label = string.IsNullOrWhiteSpace(sat.Label) ? sat.Action.ToString() : sat.Label;
 
-        // 图标：优先当 Icons.xaml 矢量资源键解析；失败则按任意文字 / emoji 渲染。
+        // 图标：优先当 Assets 下的图片（*.png）渲染；其次当 Icons.xaml 矢量资源键解析；最后按任意文字 / emoji 渲染。
         FrameworkElement icon;
-        var vector = !string.IsNullOrWhiteSpace(sat.Icon) ? TryFindResource(sat.Icon) as Geometry : null;
-        if (vector != null)
+        ImageSource? raster = null;
+        if (!string.IsNullOrWhiteSpace(sat.Icon) && sat.Icon.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+            raster = LoadPackImage(sat.Icon)?.ImageSource;
+        var vector = (raster == null && !string.IsNullOrWhiteSpace(sat.Icon))
+            ? TryFindResource(sat.Icon) as Geometry : null;
+        if (raster != null)
+        {
+            icon = new System.Windows.Controls.Image
+            {
+                Source = raster,
+                Width = 24, Height = 24,
+                Stretch = Stretch.Uniform,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+        }
+        else if (vector != null)
         {
             icon = new System.Windows.Shapes.Path
             {

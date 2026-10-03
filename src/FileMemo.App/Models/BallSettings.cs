@@ -132,8 +132,8 @@ public sealed class SatelliteConfig
         new SatelliteConfig
         {
             Id = "note",
-            Label = "快速便签",
-            Icon = "IconNote",
+            Label = "打开便签",
+            Icon = "panel_note.png",
             Color = "#151A21",
             Action = SatelliteAction.OpenRecentNote,
             Enabled = true,
@@ -144,7 +144,7 @@ public sealed class SatelliteConfig
         {
             Id = "clips",
             Label = "打开剪切板",
-            Icon = "IconClipboard",
+            Icon = "panel_clipboard.png",
             Color = "#151A21",
             Action = SatelliteAction.OpenClips,
             Enabled = true,
@@ -154,8 +154,8 @@ public sealed class SatelliteConfig
         new SatelliteConfig
         {
             Id = "tasks",
-            Label = "快速待办",
-            Icon = "IconCheckSquare",
+            Label = "打开待办",
+            Icon = "panel_task.png",
             Color = "#151A21",
             Action = SatelliteAction.OpenTasks,
             Enabled = true,
@@ -165,8 +165,8 @@ public sealed class SatelliteConfig
         new SatelliteConfig
         {
             Id = "filenotes",
-            Label = "快速文件树备注",
-            Icon = "IconFolder",
+            Label = "打开文件文件夹备注",
+            Icon = "panel_fileref.png",
             Color = "#151A21",
             Action = SatelliteAction.OpenFileNotes,
             Enabled = true,

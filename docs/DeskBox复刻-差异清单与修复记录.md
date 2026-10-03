@@ -123,7 +123,7 @@
 
 ## 5. 运行与验证说明
 
-1. 用 **Visual Studio 2022**（含 .NET 桌面开发工作负载）打开 `C:\Users\sfann\Desktop\新建文件夹\FileMemo.sln`。
+1. 用 **Visual Studio 2022**（含 .NET 桌面开发工作负载）打开 `<项目根目录>\FileMemo.sln`。
 2. 还原并生成：`dotnet build src\FileMemo.App\FileMemo.App.csproj`。
 3. 运行后重点核对：
    - 主窗口浅/深主题切换后的**背景/文字/描边**；

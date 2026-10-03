@@ -141,8 +141,8 @@ public partial class MainWindow : Window
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        try { BuildSettingsPanel(); }
-        catch (Exception ex) { LogCrash("BuildSettingsPanel", ex); }
+        try { SettingsNav.SelectedIndex = 0; }   // 触发 SettingsNav_SelectionChanged → 构建「通用」分类
+        catch (Exception ex) { LogCrash("InitSettingsNav", ex); }
         try { InitializeThemeGallery(); }
         catch (Exception ex) { LogCrash("InitializeThemeGallery", ex); }
         // 全局快捷键已在 App.OnStartup 集中注册（含备注弹窗），此处不再重复注册，避免冲突
@@ -415,6 +415,34 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>待办详情：快捷填写提醒时间（点一下预设即设好，也可在文本框手动输入）。</summary>
+    private void RemindPreset_Click(object sender, RoutedEventArgs e)
+    {
+        var t = _vm.SelectedTask;
+        if (t is null) return;
+        var tag = (sender as Button)?.Tag as string ?? "";
+        DateTime? dt = tag switch
+        {
+            "15" => DateTime.Now.AddMinutes(15),
+            "60" => DateTime.Now.AddHours(1),
+            "tonight" => RemindTonight(),
+            "tomorrow" => DateTime.Today.AddDays(1).AddHours(9),
+            _ => (DateTime?)null   // "clear"
+        };
+        t.RemindAt = dt;
+        t.Reminded = false;
+        if (RemindTextBox != null) RemindTextBox.Text = dt?.ToString("yyyy-MM-dd HH:mm") ?? "";
+        try { App.Instance.Repo.UpsertTask(t); } catch { }
+        _vm.StatusText = dt is DateTime v ? "提醒时间：" + v.ToString("yyyy-MM-dd HH:mm") : "已清除提醒";
+    }
+
+    /// <summary>今晚 20:00；若已过则顺延到明天。</summary>
+    private static DateTime RemindTonight()
+    {
+        var t = DateTime.Today.AddHours(20);
+        return t <= DateTime.Now ? t.AddDays(1) : t;
+    }
+
     /// <summary>待办详情：插入本地图片，写入描述 Markdown 并即时预览。</summary>
     private void InsertTaskImage_Click(object sender, RoutedEventArgs e)
     {
@@ -531,11 +559,39 @@ public partial class MainWindow : Window
         return null;
     }
 
-    /// <summary>按需求 4.7 设置页规范动态构建设置面板（含分组与设置行）。</summary>
-    private void BuildSettingsPanel()
+    /// <summary>当前设置二级分类（与 SettingsNav 的 Tag 对应）。</summary>
+    private string _settingsCategory = "General";
+
+    /// <summary>设置页二级菜单切换：外观主题走 XAML 静态面板，其余分类由代码构建。</summary>
+    private void SettingsNav_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (SettingsNav?.SelectedItem is ListBoxItem item && item.Tag is string tag && tag.Length > 0)
+        {
+            _settingsCategory = tag;
+            ShowSettingsCategory(tag);
+        }
+    }
+
+    /// <summary>按所选分类显示设置内容并（除「外观主题」外）重建对应分组。</summary>
+    private void ShowSettingsCategory(string category)
+    {
+        bool isAppearance = category == "Appearance";
+        if (AppearancePanel != null)
+            AppearancePanel.Visibility = isAppearance ? Visibility.Visible : Visibility.Collapsed;
+        if (SettingsPanel != null)
+            SettingsPanel.Visibility = isAppearance ? Visibility.Collapsed : Visibility.Visible;
+        if (isAppearance) return;
+        try { BuildSettingsPanel(category); }
+        catch (Exception ex) { LogCrash("BuildSettingsPanel." + category, ex); }
+    }
+
+    /// <summary>按需求 4.7 设置页规范，按分类构建设置面板（含分组与设置行）。</summary>
+    private void BuildSettingsPanel(string category)
     {
         var s = App.Instance.Settings;
         SettingsPanel.Children.Clear();
+
+        bool Cat(params string[] names) => System.Array.IndexOf(names, category) >= 0;
 
         void Section(string title)
         {
@@ -610,17 +666,37 @@ public partial class MainWindow : Window
             return tb;
         }
 
-        Guard("通用", () =>
+        if (Cat("General")) Guard("通用", () =>
         {
             Section("通用");
             Check("开机启动", "登录 Windows 后自动运行并常驻托盘", s.StartWithWindows, v => s.StartWithWindows = v);
             Check("关闭时最小化到托盘", "关闭主窗口后监听继续运行", s.MinimizeToTray, v => s.MinimizeToTray = v);
         });
 
+        if (Cat("General")) Guard("待办提醒", () =>
+        {
+            Section("待办提醒");
+            Check("启用待办提醒", "待办到达提醒时间时，弹出托盘气泡与提醒窗口（可稍后提醒 / 标记完成）", s.ReminderEnabled, v =>
+            {
+                s.ReminderEnabled = v;
+                App.Instance.Reminders?.Restart();
+            });
+            Text("检查间隔（秒）", "10 ~ 600，越小越准时、越耗资源（默认 30）", s.ReminderCheckSeconds.ToString(), v =>
+            {
+                if (int.TryParse(v, out var n)) s.ReminderCheckSeconds = Math.Clamp(n, 10, 600);
+                App.Instance.Reminders?.Restart();
+            });
+            Text("提前提醒（分钟）", "0 = 到点提醒；大于 0 表示提前多少分钟提醒", s.ReminderAdvanceMinutes.ToString(), v =>
+            {
+                if (int.TryParse(v, out var n)) s.ReminderAdvanceMinutes = Math.Clamp(n, 0, 1440);
+            });
+            Check("允许稍后提醒", "提醒窗口提供「稍后提醒 10 分钟」按钮", s.ReminderSnoozeEnabled, v => s.ReminderSnoozeEnabled = v);
+        });
+
         // ---- 外观主题：已改为 XAML 静态声明的 ThemeGallery（见 MainWindow.xaml），
         //      由 InitializeThemeGallery() 在 OnLoaded 中初始化，不再动态构建 ----
 
-        Guard("剪贴板", () =>
+        if (Cat("Clipboard")) Guard("剪贴板", () =>
         {
             Section("剪贴板");
             Check("启用剪贴板随记", "监听系统剪贴板，记录文本 / 图片 / 文件路径 / HTML", s.ClipboardEnabled, v => s.ClipboardEnabled = v);
@@ -635,7 +711,7 @@ public partial class MainWindow : Window
             });
         });
 
-        Guard("文件追踪", () =>
+        if (Cat("Files")) Guard("文件追踪", () =>
         {
             Section("文件追踪");
             Check("全盘追踪", "默认仅追踪已添加备注的文件/文件夹", s.FullDiskTracking, v => s.FullDiskTracking = v);
@@ -646,28 +722,28 @@ public partial class MainWindow : Window
             });
         });
 
-        Guard("搜索与 Everything", () =>
+        if (Cat("Search")) Guard("搜索与 Everything", () =>
         {
             Section("搜索与 Everything");
             Check("启用 Everything", "本地固定盘通过 es.exe 调用，未安装时自动降级", s.UseEverything, v => s.UseEverything = v);
             Text("es.exe 路径", "留空则自动探测常见安装位置", s.EverythingPath, v => s.EverythingPath = v);
         });
 
-        Guard("快捷键", () =>
+        if (Cat("Hotkeys")) Guard("快捷键", () =>
         {
             Section("快捷键");
             Text("快速便签", "例如 Ctrl+Alt+N", s.HotkeyQuickNote, v => s.HotkeyQuickNote = v);
             Text("剪贴板面板", "例如 Ctrl+Alt+V", s.HotkeyClipboard, v => s.HotkeyClipboard = v);
         });
 
-        Guard("同步与备份", () =>
+        if (Cat("Sync")) Guard("同步与备份", () =>
         {
             Section("同步与备份");
             Check("云同步", "仅同步本机 SQLite 主库（MVP 预留）", s.CloudSyncEnabled, v => s.CloudSyncEnabled = v);
             Check("Sidecar", "检测到移动盘 / NAS 时生成伴随文件", s.SidecarEnabled, v => s.SidecarEnabled = v);
         });
 
-        Guard("P1 · 追踪与迁移", () =>
+        if (Cat("Files")) Guard("P1 · 追踪与迁移", () =>
         {
             Section("P1 · 追踪与迁移");
             Check("哈希兜底", "跨卷移动时用完整哈希 + 大小 + 时间 + 名称相似度找回备注", s.HashFallbackEnabled, v => s.HashFallbackEnabled = v);
@@ -675,7 +751,7 @@ public partial class MainWindow : Window
             Check("网络盘 / NAS 索引", "网络盘使用内置轻量索引（卷序列号 + 路径 + 哈希）", s.NetworkPathIndexEnabled, v => s.NetworkPathIndexEnabled = v);
         });
 
-        Guard("P1 · sidecar 伴生文件", () =>
+        if (Cat("Files")) Guard("P1 · sidecar 伴生文件", () =>
         {
             Section("P1 · sidecar 伴生文件");
             Check("启用 sidecar", "移动盘 / NAS 场景把备注写入伴随文件作为权威副本", s.SidecarEnabled, v => s.SidecarEnabled = v);
@@ -684,14 +760,14 @@ public partial class MainWindow : Window
             Text("集中目录", "选择「集中目录」策略时的存放路径，留空用 %APPDATA%\\SuperNote\\sidecars", s.SidecarCentralDir, v => s.SidecarCentralDir = v);
         });
 
-        Guard("P1 · OCR 搜索", () =>
+        if (Cat("Search")) Guard("P1 · OCR 搜索", () =>
         {
             Section("P1 · OCR 搜索");
             Check("启用图片 OCR", "把剪贴板图片 / 备注插图的文字提取为可搜索文本（需系统 OCR 语言包）", s.OcrEnabled, v => s.OcrEnabled = v);
             Text("OCR 语言", "Windows.Media.Ocr 语言标签，例如 zh-Hans-CN", s.OcrLanguage, v => s.OcrLanguage = v);
         });
 
-        Guard("P1 · 云同步（预留）", () =>
+        if (Cat("Sync")) Guard("P1 · 云同步（预留）", () =>
         {
             Section("P1 · 云同步（预留）");
             Check("启用云同步", "仅同步本机 SQLite 主库，冲突保留 .conflict 副本", s.CloudSyncEnabled, v => s.CloudSyncEnabled = v);
@@ -700,7 +776,7 @@ public partial class MainWindow : Window
             Check("传输端到端加密", "上传前对主库做 DPAPI 加密", s.CloudSyncEncrypt, v => s.CloudSyncEncrypt = v);
         });
 
-        Guard("P1 · 副本继承策略", () =>
+        if (Cat("Files")) Guard("P1 · 副本继承策略", () =>
         {
             Section("P1 · 副本继承策略");
             Text("复制文件时", "Ask / Always / Never / SameDirOnly / SidecarOnly", s.InheritDefault.ToString(), v =>
@@ -709,7 +785,7 @@ public partial class MainWindow : Window
         });
         });
 
-        Guard("P1 · 时间线", () =>
+        if (Cat("Files")) Guard("P1 · 时间线", () =>
         {
             Section("P1 · 时间线");
             Text("启用事件分类", "逗号分隔；默认仅备注编辑 + 文件关键变化", string.Join(",", s.TimelineEnabledCategories), v =>
@@ -722,7 +798,7 @@ public partial class MainWindow : Window
         });
         });
 
-        Guard("P2 · 关系图谱 / 知识网络", () =>
+        if (Cat("Advanced")) Guard("P2 · 关系图谱 / 知识网络", () =>
         {
             Section("P2 · 关系图谱 / 知识网络");
             Check("启用知识网络", "把便签、文件备注、待办及其关联可视化", s.GraphEnabled, v => s.GraphEnabled = v);
@@ -737,7 +813,7 @@ public partial class MainWindow : Window
         }
         });
 
-        Guard("P2 · 图片向量搜索", () =>
+        if (Cat("Advanced")) Guard("P2 · 图片向量搜索", () =>
         {
             Section("P2 · 图片向量搜索");
             Check("启用图片向量", "本地特征向量（148 维）相似图检索，不引入 AI / 云服务", s.ImageVectorEnabled, v => s.ImageVectorEnabled = v);
@@ -760,27 +836,27 @@ public partial class MainWindow : Window
         }
         });
 
-        Guard("P2 · 团队协作（预留）", () =>
+        if (Cat("Advanced")) Guard("P2 · 团队协作（预留）", () =>
         {
             Section("P2 · 团队协作（预留）");
             Check("启用协作", "开启后可用工作区 / 成员元数据模型（默认本地，不连远端）", s.CollaborationEnabled, v => s.CollaborationEnabled = v);
             Text("协作提供方", "local 或自定义 ICollaborationProvider 名称", s.CollaborationProvider, v => s.CollaborationProvider = v);
         });
 
-        Guard("P2 · 插件系统", () =>
+        if (Cat("Advanced")) Guard("P2 · 插件系统", () =>
         {
             Section("P2 · 插件系统");
             Check("启用插件", "扫描插件目录并加载 IPlugin 实现（独立加载上下文）", s.PluginsEnabled, v => s.PluginsEnabled = v);
             Text("插件目录", "留空用 %APPDATA%\\SuperNote\\plugins", s.PluginsDir, v => s.PluginsDir = v);
         });
 
-        Guard("P2 · 后台服务", () =>
+        if (Cat("Advanced")) Guard("P2 · 后台服务", () =>
         {
             Section("P2 · 后台服务");
             Check("安装为后台服务", "大规模追踪 / 网络盘监控 / 开机索引（需管理员运行 scripts\\install-service.ps1）", s.InstallBackgroundService, v => s.InstallBackgroundService = v);
         });
 
-        Guard("桌面悬浮图标", () =>
+        if (Cat("FloatingBall")) Guard("桌面悬浮图标", () =>
         {
             Section("桌面悬浮图标");
             var bc = App.Instance.BallConfig;
@@ -829,13 +905,13 @@ public partial class MainWindow : Window
             }
         });
 
-        Guard("隐私与安全", () =>
+        if (Cat("Privacy")) Guard("隐私与安全", () =>
         {
             Section("隐私与安全");
             Check("应用锁", "启动时要求 Windows Hello / 密码（MVP 预留）", s.AppLockEnabled, v => s.AppLockEnabled = v);
         });
 
-        Guard("关于", () =>
+        if (Cat("About")) Guard("关于", () =>
         {
             Section("关于");
             SettingsPanel.Children.Add(new TextBlock
@@ -853,7 +929,7 @@ public partial class MainWindow : Window
             });
             SettingsPanel.Children.Add(new TextBlock
             {
-                Text = "MVP v0.1.0 · 本地优先 · 纯 Windows · 无 AI",
+                Text = "v1.0 · 本地优先 · 纯 Windows · 无 AI",
                 Style = (Style)FindResource("TextCaption")
             });
             SettingsPanel.Children.Add(new TextBlock

@@ -21,7 +21,9 @@
     <!-- WinForms 分析器提示：DPI 通过清单配置时会产生 WFAC010，此处按 WPF 惯例保留清单并抑制该警告 -->
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
     <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
-    <Version>0.1.0</Version>
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <Product>文笺 FileMemo</Product>
     <Company>文笺 FileMemo</Company>
     <AssemblyTitle>文笺 FileMemo —— 签随文件走的超级便签</AssemblyTitle>
@@ -49,9 +51,18 @@
     <None Remove="Assets\appicon.png" />
     <None Remove="Assets\ball.png" />
     <None Remove="Assets\ball_tile_icon.png" />
+    <None Remove="Assets\panel_note.png" />
+    <None Remove="Assets\panel_clipboard.png" />
+    <None Remove="Assets\panel_task.png" />
+    <None Remove="Assets\panel_fileref.png" />
     <Resource Include="Assets\appicon.png" />
     <Resource Include="Assets\ball.png" />
     <Resource Include="Assets\ball_tile_icon.png" />
+    <!-- 展开面板 4 个动作图标（用户定制图，2×2 切分：便签 / 剪切板 / 待办 / 文件文件夹备注） -->
+    <Resource Include="Assets\panel_note.png" />
+    <Resource Include="Assets\panel_clipboard.png" />
+    <Resource Include="Assets\panel_task.png" />
+    <Resource Include="Assets\panel_fileref.png" />
   </ItemGroup>
 
 </Project>

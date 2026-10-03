@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Input;
 using FileMemo.App.Models;
+using FileMemo.App.Services;
 
 namespace FileMemo.App.Views;
 
@@ -10,8 +11,23 @@ public partial class QuickNoteWindow : Window
     public QuickNoteWindow()
     {
         InitializeComponent();
-        Loaded += (_, _) => ContentBox.Focus();
+        Loaded += (_, _) => { ContentBox.Focus(); RefreshPinVisual(); };
         PreviewKeyDown += OnKey;
+        WindowPin.ApplyOnLoad(this, PinKind.QuickNote);   // 恢复上次的固定状态
+    }
+
+    private void Pin_Click(object sender, RoutedEventArgs e)
+    {
+        WindowPin.Toggle(this, PinKind.QuickNote);
+        RefreshPinVisual();
+    }
+
+    private void RefreshPinVisual()
+    {
+        bool pinned = WindowPin.IsPinned(this);
+        PinBtn.ToolTip = pinned ? "已固定（点击取消）" : "固定窗口（置顶，不随批量收纳 / 最小化）";
+        try { PinIcon.Stroke = (System.Windows.Media.Brush)FindResource(pinned ? "PrimaryBrush" : "TextSecondaryBrush"); }
+        catch { }
     }
 
     private void OnKey(object sender, KeyEventArgs e)

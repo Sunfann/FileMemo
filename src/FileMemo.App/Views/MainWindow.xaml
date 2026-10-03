@@ -395,11 +395,64 @@
                         <TextBlock Text="回收站（MVP 占位：删除的便签进入此处）" Margin="16,14" Style="{StaticResource TextSecondary}" />
                     </DockPanel>
 
-                    <!-- 设置 -->
+                    <!-- 设置：二级菜单（左：分类导航，右：内容） -->
                     <DockPanel x:Name="MiddleSettings" Visibility="Collapsed">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                      HorizontalScrollBarVisibility="Disabled">
-                            <StackPanel Margin="20,16,20,24">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="196" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- 二级菜单：设置分类导航 -->
+                            <Border Grid.Column="0" Background="{DynamicResource SurfaceAltBrush}"
+                                    BorderBrush="{DynamicResource BorderBrushSoft}" BorderThickness="0,0,1,0">
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Top" Text="设置" Margin="20,18,20,10"
+                                               Style="{StaticResource TextH2}" />
+                                    <ListBox x:Name="SettingsNav" Background="Transparent" BorderThickness="0"
+                                             SelectionChanged="SettingsNav_SelectionChanged">
+                                        <ListBoxItem Style="{StaticResource NavItem}" Tag="General">
+                                            <TextBlock Text="通用" VerticalAlignment="Center" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource NavItem}" Tag="Appearance">
+                                            <TextBlock Text="外观主题" VerticalAlignment="Center" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource NavItem}" Tag="Clipboard">
+                                            <TextBlock Text="剪贴板" VerticalAlignment="Center" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource NavItem}" Tag="Files">
+                                            <TextBlock Text="文件与追踪" VerticalAlignment="Center" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource NavItem}" Tag="Search">
+                                            <TextBlock Text="搜索" VerticalAlignment="Center" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource NavItem}" Tag="Hotkeys">
+                                            <TextBlock Text="快捷键" VerticalAlignment="Center" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource NavItem}" Tag="Sync">
+                                            <TextBlock Text="同步与备份" VerticalAlignment="Center" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource NavItem}" Tag="Intelligence">
+                                            <TextBlock Text="高级功能" VerticalAlignment="Center" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource NavItem}" Tag="FloatingBall">
+                                            <TextBlock Text="桌面悬浮图标" VerticalAlignment="Center" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource NavItem}" Tag="Privacy">
+                                            <TextBlock Text="隐私与安全" VerticalAlignment="Center" />
+                                        </ListBoxItem>
+                                        <ListBoxItem Style="{StaticResource NavItem}" Tag="About">
+                                            <TextBlock Text="关于" VerticalAlignment="Center" />
+                                        </ListBoxItem>
+                                    </ListBox>
+                                </DockPanel>
+                            </Border>
+
+                            <!-- 内容区 -->
+                            <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled">
+                                <StackPanel Margin="20,16,20,24">
+                                    <StackPanel x:Name="AppearancePanel" Visibility="Collapsed">
 
                                 <!-- ============ 外观主题画廊（XAML 静态声明，编译期验证） ============
                                      ★ 卡片内的预览色全部 Binding 主题定义的硬编码色值 + HexToBrush，
@@ -522,12 +575,15 @@
                                             </DataTemplate.Triggers>
                                         </DataTemplate>
                                     </ListBox.ItemTemplate>
-                                </ListBox>
+                                    </ListBox>
 
-                                <!-- 其余设置项：仍由代码动态构建 -->
-                                <StackPanel x:Name="SettingsPanel" />
-                            </StackPanel>
-                        </ScrollViewer>
+                                    </StackPanel><!-- /AppearancePanel -->
+
+                                    <!-- 其余分类：由所选分类动态构建（见 MainWindow.xaml.cs） -->
+                                    <StackPanel x:Name="SettingsPanel" />
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Grid>
                     </DockPanel>
                 </Grid>
             </Border>
@@ -664,7 +720,25 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                        <TextBlock Text="负责人 / 截止时间 / 优先级由数据模型承载（MVP 简化编辑）"
+                        <TextBlock Text="提醒时间（点预设即可，也可直接填写）"
+                                   Style="{StaticResource TextCaption}" Margin="0,0,0,4" />
+                        <WrapPanel Margin="0,0,0,6">
+                            <Button Content="+15 分钟" Style="{StaticResource SecondaryButton}" Margin="0,0,6,6"
+                                    Tag="15" Click="RemindPreset_Click" />
+                            <Button Content="+1 小时" Style="{StaticResource SecondaryButton}" Margin="0,0,6,6"
+                                    Tag="60" Click="RemindPreset_Click" />
+                            <Button Content="今晚 20:00" Style="{StaticResource SecondaryButton}" Margin="0,0,6,6"
+                                    Tag="tonight" Click="RemindPreset_Click" />
+                            <Button Content="明天 09:00" Style="{StaticResource SecondaryButton}" Margin="0,0,6,6"
+                                    Tag="tomorrow" Click="RemindPreset_Click" />
+                            <Button Content="清除" Style="{StaticResource TextButton}" Margin="0,0,6,6"
+                                    Tag="clear" Click="RemindPreset_Click" />
+                        </WrapPanel>
+                        <TextBox x:Name="RemindTextBox"
+                                 Text="{Binding SelectedTask.RemindInput, UpdateSourceTrigger=LostFocus}"
+                                 Style="{StaticResource AppTextBox}" Margin="0,0,0,8"
+                                 ToolTip="格式 yyyy-MM-dd HH:mm，留空则不提醒" />
+                        <TextBlock Text="负责人 / 截止时间 / 优先级由数据模型承载（v1.0 简化编辑）"
                                    Style="{StaticResource TextCaption}" />
                     </StackPanel>
                     </ScrollViewer>

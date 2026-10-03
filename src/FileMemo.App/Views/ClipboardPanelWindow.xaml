@@ -6,9 +6,21 @@
         FontFamily="{StaticResource AppFontFamily}"
         Background="{DynamicResource SurfaceBrush}">
     <DockPanel Margin="12">
-        <TextBox x:Name="SearchBox" DockPanel.Dock="Top" Style="{StaticResource AppTextBox}"
-                 Margin="0,0,0,8" TextChanged="SearchBox_TextChanged"
-                 ToolTip="搜索剪贴板内容 / 来源应用" />
+        <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="SearchBox" Grid.Column="0" Style="{StaticResource AppTextBox}"
+                     TextChanged="SearchBox_TextChanged"
+                     ToolTip="搜索剪贴板内容 / 来源应用" />
+            <Button x:Name="PinBtn" Grid.Column="1" Style="{StaticResource CaptionButton}" Margin="8,0,0,0"
+                    Width="30" Height="30" ToolTip="固定窗口（置顶，不随批量收纳 / 最小化）"
+                    Click="WindowPin_Click">
+                <Path x:Name="PinIcon" Style="{StaticResource IconBase}" Data="{StaticResource IconPin}"
+                      Stroke="{DynamicResource TextSecondaryBrush}" />
+            </Button>
+        </Grid>
         <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
             <Button Content="转为便签" Style="{StaticResource PrimaryButton}" Click="ToNote_Click" />
             <Button Content="固定/取消" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0" Click="Pin_Click" />

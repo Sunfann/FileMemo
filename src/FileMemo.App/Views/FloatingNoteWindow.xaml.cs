@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using FileMemo.App.Models;
+using FileMemo.App.Services;
 
 namespace FileMemo.App.Views;
 
@@ -29,7 +30,23 @@ public partial class FloatingNoteWindow : Window
     {
         InitializeComponent();
         _paths = paths;
-        Loaded += (_, _) => { LoadNotes(); PositionNearCursor(); };
+        Loaded += (_, _) => { LoadNotes(); PositionNearCursor(); RefreshPinVisual(); };
+        WindowPin.ApplyOnLoad(this, PinKind.FileNote);   // 恢复上次的固定状态
+    }
+
+    private void Pin_Click(object sender, RoutedEventArgs e)
+    {
+        WindowPin.Toggle(this, PinKind.FileNote);
+        RefreshPinVisual();
+    }
+
+    private void RefreshPinVisual()
+    {
+        bool pinned = WindowPin.IsPinned(this);
+        if (PinBtn != null)
+            PinBtn.ToolTip = pinned ? "已固定（点击取消）" : "固定窗口（置顶，不随批量收纳 / 最小化）";
+        try { PinIcon.Stroke = (Brush)FindResource(pinned ? "PrimaryBrush" : "TextSecondaryBrush"); }
+        catch { }
     }
 
     private void LoadNotes()

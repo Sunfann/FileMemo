@@ -64,7 +64,7 @@ public sealed class BallConfigService
 
         // 迁移：旧版默认只有 1 颗「打开便签」卫星 → 整体重置为出厂默认（4 个面板动作）。
         // 判定：仅 1 颗启用卫星、Id == "note" 且动作为 OpenRecentNote。
-        const int CurrentBallDefaultsVersion = 5;
+        const int CurrentBallDefaultsVersion = 6;
         if (s.BallDefaultsVersion < 2
             && s.Satellites.Count == 1
             && string.Equals(s.Satellites[0].Id, "note", StringComparison.Ordinal)
