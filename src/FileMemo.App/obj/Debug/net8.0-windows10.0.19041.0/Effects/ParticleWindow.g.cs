@@ -60,7 +60,7 @@ namespace FileMemo.App.Effects {
                 return;
             }
             _contentLoaded = true;
-            System.Uri resourceLocater = new System.Uri("/FileMemo;component/effects/particlewindow.xaml", System.UriKind.Relative);
+            System.Uri resourceLocater = new System.Uri("/FileMemo;V1.0.0.0;component/effects/particlewindow.xaml", System.UriKind.Relative);
             
             #line 1 "..\..\..\..\Effects\ParticleWindow.xaml"
             System.Windows.Application.LoadComponent(this, resourceLocater);

@@ -60,7 +60,7 @@ namespace FileMemo.App.Views {
                 return;
             }
             _contentLoaded = true;
-            System.Uri resourceLocater = new System.Uri("/FileMemo;component/views/floatingballwindow.xaml", System.UriKind.Relative);
+            System.Uri resourceLocater = new System.Uri("/FileMemo;V1.0.0.0;component/views/floatingballwindow.xaml", System.UriKind.Relative);
             
             #line 1 "..\..\..\..\Views\FloatingBallWindow.xaml"
             System.Windows.Application.LoadComponent(this, resourceLocater);

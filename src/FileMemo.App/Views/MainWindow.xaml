@@ -253,6 +253,8 @@
                                    Style="{StaticResource TextSecondary}" />
                         <ListBox ItemsSource="{Binding Clips}" SelectedItem="{Binding SelectedClip}"
                                  ItemContainerStyle="{StaticResource AppListBoxItem}"
+                                 HorizontalContentAlignment="Stretch"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                  Background="Transparent" BorderThickness="0">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
@@ -260,6 +262,7 @@
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0" Text="{Binding KindLabel}" Width="52"
                                                    Style="{StaticResource TextCaption}" VerticalAlignment="Top" />
@@ -272,6 +275,7 @@
                                                 <Run Text="{Binding CreatedAt, StringFormat='{}{0:HH:mm:ss}'}" />
                                             </TextBlock>
                                         </StackPanel>
+                                        <Path Grid.Column="2" Style="{StaticResource IconBase}" Data="{StaticResource IconPin}" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.6" VerticalAlignment="Top" Margin="8,0,0,0" ToolTip="已固定" Visibility="{Binding Pinned, Converter={StaticResource BoolToVis}}" />
                                     </Grid>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
@@ -669,7 +673,10 @@
 
                 <!-- 剪贴板详情 -->
                 <DockPanel x:Name="DetailClip" Visibility="Collapsed" Margin="{StaticResource PanelPadding}">
-                    <TextBlock DockPanel.Dock="Top" Text="剪贴板详情" Style="{StaticResource TextH2}" Margin="0,0,0,12" />
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,12">
+                        <TextBlock Text="剪贴板详情" Style="{StaticResource TextH2}" VerticalAlignment="Center" />
+                        <Path Style="{StaticResource IconBase}" Data="{StaticResource IconPin}" Margin="8,0,0,0" Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.6" VerticalAlignment="Center" ToolTip="当前项已固定" Visibility="{Binding SelectedClip.Pinned, Converter={StaticResource BoolToVis}}" />
+                    </StackPanel>
                     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,10,0,0">
                         <Button Content="转为便签" Style="{StaticResource PrimaryButton}" Command="{Binding ConvertClipToNoteCommand}" />
                         <Button Content="固定/取消" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0" Command="{Binding PinClipCommand}" />
@@ -720,7 +727,7 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                        <TextBlock Text="提醒时间（点预设即可，也可直接填写）"
+                        <TextBlock Text="提醒时间（点输入框选日期、点预设快速设定，也可直接填写）"
                                    Style="{StaticResource TextCaption}" Margin="0,0,0,4" />
                         <WrapPanel Margin="0,0,0,6">
                             <Button Content="+15 分钟" Style="{StaticResource SecondaryButton}" Margin="0,0,6,6"
@@ -734,10 +741,26 @@
                             <Button Content="清除" Style="{StaticResource TextButton}" Margin="0,0,6,6"
                                     Tag="clear" Click="RemindPreset_Click" />
                         </WrapPanel>
-                        <TextBox x:Name="RemindTextBox"
-                                 Text="{Binding SelectedTask.RemindInput, UpdateSourceTrigger=LostFocus}"
-                                 Style="{StaticResource AppTextBox}" Margin="0,0,0,8"
-                                 ToolTip="格式 yyyy-MM-dd HH:mm，留空则不提醒" />
+                        <Grid Margin="0,0,0,8">
+                                <TextBox x:Name="RemindTextBox"
+                                         Text="{Binding SelectedTask.RemindInput, UpdateSourceTrigger=LostFocus}"
+                                         Style="{StaticResource AppTextBox}"
+                                         PreviewMouseLeftButtonDown="RemindTextBox_PreviewMouseLeftButtonDown"
+                                         ToolTip="点击输入框弹出日历选择日期；格式 yyyy-MM-dd HH:mm，留空则不提醒" />
+                                <Popup x:Name="RemindPopup" Placement="MousePoint"
+                                       StaysOpen="True"
+                                       AllowsTransparency="True" PopupAnimation="Fade">
+                                    <Border Background="{DynamicResource SurfaceBrush}"
+                                            BorderBrush="{DynamicResource BorderBrushSoft}" BorderThickness="1"
+                                            CornerRadius="8" Padding="4"
+                                            Effect="{DynamicResource ShadowPopup}">
+                                        <Calendar x:Name="RemindCalendar" FontSize="22"
+                                                  Foreground="{DynamicResource TextPrimaryBrush}"
+                                                  Background="Transparent" BorderThickness="0"
+                                                  SelectedDatesChanged="RemindCalendar_SelectedDatesChanged" />
+                                    </Border>
+                                </Popup>
+                            </Grid>
                         <TextBlock Text="负责人 / 截止时间 / 优先级由数据模型承载（v1.0 简化编辑）"
                                    Style="{StaticResource TextCaption}" />
                     </StackPanel>

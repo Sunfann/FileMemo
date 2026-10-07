@@ -2,6 +2,7 @@ using System.IO;
 using System.Text;
 using System.Windows;
 using FileMemo.App.Data;
+using FileMemo.App.Models;
 using FileMemo.App.Services;
 using FileMemo.App.ViewModels;
 using FileMemo.App.Views;
@@ -31,6 +32,7 @@ public partial class App : Application
     // 托盘 / 悬浮球仍可唤回；只有走「退出」时才真正结束进程。
     private MainWindow? _main;
     private bool _shuttingDown;
+    private bool _startedHidden;   // 本次由开机自启拉起（--autostart）：不弹出主窗口，仅常驻托盘/悬浮球
     public bool IsShuttingDown => _shuttingDown;
 
     public Database Db { get; private set; } = null!;
@@ -38,6 +40,9 @@ public partial class App : Application
     public SettingsService Settings { get; private set; } = null!;
     public HotkeyService Hotkeys { get; private set; } = null!;
     public EverythingSearchService Everything { get; private set; } = null!;
+
+    /// <summary>开机自启管理（登录 Windows 后自动运行并常驻托盘；写 HKCU Run，免管理员）。</summary>
+    public StartupService Startup { get; private set; } = null!;
 
     /// <summary>文件变化监听（USN Journal + FileSystemWatcher）。
     /// 外部（如新增备注时）可调用 EnsureWatchForPath 动态加入监听目录。</summary>
@@ -102,6 +107,15 @@ public partial class App : Application
             try { Settings = new SettingsService(); } catch { /* 极端兜底 */ }
         }
 
+        // ---- 开机自启：按设置同步 HKCU Run 注册项（免管理员），并自愈为当前可执行文件路径 ----
+        try
+        {
+            _startedHidden = e.Args.Contains("--autostart");
+            Startup = new StartupService();
+            Startup.Apply(Settings.StartWithWindows);
+        }
+        catch (Exception ex) { LogCrash("Startup", ex); }
+
         // ---- 外观主题：必须早于任何窗口创建，让窗口初次显示就是正确配色 ----
         try
         {
@@ -140,6 +154,8 @@ public partial class App : Application
         try
         {
             _clipboard = new ClipboardMonitorService(Repo, Settings);
+            // 订阅剪贴板捕获事件：实现剪贴板列表实时刷新
+            _clipboard.ClipCaptured += OnClipCaptured;
             if (Settings.ClipboardEnabled) _clipboard.Start();
         }
         catch (Exception ex) { LogCrash("Clipboard", ex); }
@@ -212,10 +228,10 @@ public partial class App : Application
         try { RegisterGlobalHotkeys(); }
         catch (Exception ex) { LogCrash("Hotkeys.Register", ex); }
 
-        // ---- 主窗口：始终尝试显示；仅当主窗口本身都建不出来时才退出 ----
+        // ---- 主窗口：始终创建；开机自启时仅驻留托盘不弹出，其余情况显示 ----
         try
         {
-            EnsureMainWindow();
+            EnsureMainWindow(show: !_startedHidden);
         }
         catch (Exception ex)
         {
@@ -421,7 +437,7 @@ public partial class App : Application
     /// 创建（必要时重建）主窗口并显示 / 激活。
     /// 窗口被真正关闭后也能重新唤回，供托盘、悬浮球、全局快捷键统一调用。
     /// </summary>
-    public MainWindow EnsureMainWindow()
+    public MainWindow EnsureMainWindow(bool show = true)
     {
         if (_main == null)
         {
@@ -429,10 +445,22 @@ public partial class App : Application
             MainWindow = _main;
             _main.Closed += (_, _) => _main = null;
         }
-        if (!_main.IsVisible) _main.Show();
-        if (_main.WindowState == WindowState.Minimized) _main.WindowState = WindowState.Normal;
-        _main.Activate();
+        if (show && !_main.IsVisible) _main.Show();
+        if (show)
+        {
+            if (_main.WindowState == WindowState.Minimized) _main.WindowState = WindowState.Normal;
+            _main.Activate();
+        }
         return _main;
+    }
+
+    /// <summary>剪贴板捕获回调：通知已打开的主窗口实时刷新剪贴板列表。</summary>
+    private void OnClipCaptured(Clip clip)
+    {
+        var win = _main;
+        if (win == null) return;   // 主窗口尚未创建：下次打开时会自动加载最新数据
+        try { win.Dispatcher.Invoke(() => win.OnClipCaptured(clip)); }
+        catch { }
     }
 
     public void ShowMainWindow() => EnsureMainWindow();

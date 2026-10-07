@@ -42,6 +42,9 @@ public sealed class MainViewModel : ObservableEntity
         set { if (Set(ref _section, value)) { OnSectionChanged(); Raise(nameof(Title)); } }
     }
 
+    /// <summary>请求主窗口切换到指定导航分区（用于「转为便签」后自动跳转到便签页）。</summary>
+    public event Action<NavSection>? NavigateRequested;
+
     public string Title => _section switch
     {
         NavSection.Notes => "便签 / 文件备注",
@@ -143,6 +146,14 @@ public sealed class MainViewModel : ObservableEntity
 
     /// <summary>供右侧编辑器保存后刷新统一列表。</summary>
     public void ReloadRecords() => LoadRecords();
+
+    /// <summary>剪贴板实时刷新：重载列表并尽量保留当前选中项。</summary>
+    public void ReloadClipsPreservingSelection()
+    {
+        var id = SelectedClip?.Id;
+        LoadClips();
+        SelectedClip = id == null ? null : Clips.FirstOrDefault(c => c.Id == id);
+    }
 
     /// <summary>统一记录列表：便签（note_record）+ 文件/文件夹备注（annotation）。</summary>
     private void LoadRecords()
@@ -264,7 +275,7 @@ public sealed class MainViewModel : ObservableEntity
 
     private void ConvertClipToNote()
     {
-        if (SelectedClip == null) return;
+        if (SelectedClip == null) { StatusText = "请先选择一条剪贴记录"; return; }
         var n = new NoteRecord
         {
             Title = "来自剪贴板 " + DateTime.Now.ToString("HH:mm"),
@@ -273,16 +284,28 @@ public sealed class MainViewModel : ObservableEntity
             Tags = "临时"
         };
         _repo.UpsertNote(n);
+        // 切到「便签」分区：刷新记录列表，并选中新便签，使其在便签页可见
+        Section = NavSection.Notes;
         LoadRecords();
-        StatusText = "剪贴板已转为便签";
+        SelectedRecord = Records.FirstOrDefault(r => !r.IsFile && r.Note != null && r.Note.Id == n.Id)
+                         ?? new RecordRow { IsFile = false, Note = n };
+        // 请求主窗口同步切换导航与详情面板到便签页
+        NavigateRequested?.Invoke(NavSection.Notes);
+        StatusText = "剪贴板已转为便签，已跳转到便签页";
     }
 
     private void PinClip()
     {
-        if (SelectedClip == null) return;
+        if (SelectedClip == null) { StatusText = "请先选择一条剪贴记录"; return; }
+        var id = SelectedClip.Id;
         SelectedClip.Pinned = !SelectedClip.Pinned;
-        _repo.SetClipPinned(SelectedClip.Id, SelectedClip.Pinned);
+        var pinned = SelectedClip.Pinned;
+        _repo.SetClipPinned(id, pinned);
+        // 重新加载列表（置顶排序会变化），并恢复原选中项，避免选中丢失
         LoadClips();
+        SelectedClip = Clips.FirstOrDefault(c => c.Id == id);
+        // 明确反馈当前是「固定」还是「取消固定」
+        StatusText = pinned ? "已固定该剪贴记录" : "已取消固定";
     }
 
     private void DeleteClip()

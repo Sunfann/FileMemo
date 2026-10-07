@@ -1,5 +1,5 @@
 ﻿FileMemo
-
+1.0.0.0
 
 winexe
 C#
@@ -12,7 +12,7 @@ TRACE;WINDOWS_OCR;DEBUG;NET;NET8_0;NETCOREAPP
 C:\Users\sfann\Desktop\新建文件夹\src\FileMemo.App\App.xaml
 151668071205
 
-631371090213
+64-1546237351
 2141000144318
 Effects\ParticleWindow.xaml;Themes\Controls.xaml;Themes\Icons.xaml;Themes\Theme.Initial.xaml;Themes\Tokens.xaml;Views\AddAnnotationDialog.xaml;Views\ClipboardPanelWindow.xaml;Views\FloatingBallWindow.xaml;Views\FloatingNoteWindow.xaml;Views\GraphWindow.xaml;Views\MainWindow.xaml;Views\QuickNoteWindow.xaml;Views\QuickTaskWindow.xaml;Views\ReminderWindow.xaml;Views\WidgetWindow.xaml;
 

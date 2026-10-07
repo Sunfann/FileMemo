@@ -6,7 +6,7 @@
   "compilationOptions": {},
   "targets": {
     ".NETCoreApp,Version=v8.0": {
-      "FileMemo/0.1.0": {
+      "FileMemo/1.0.0": {
         "dependencies": {
           "Markdig": "0.37.0",
           "Microsoft.Data.Sqlite": "8.0.8",
@@ -197,7 +197,7 @@
     }
   },
   "libraries": {
-    "FileMemo/0.1.0": {
+    "FileMemo/1.0.0": {
       "type": "project",
       "serviceable": false,
       "sha512": ""

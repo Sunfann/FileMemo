@@ -18,11 +18,16 @@ public partial class MainWindow : Window
     // 当前导航分区：用于防止记录列表的选中事件在非「便签」分区下覆盖右侧详情面板
     private NavSection _section = NavSection.Notes;
 
+    // 防止「同步日期选择器」时再次触发 SelectedDateChanged 造成回环
+    private bool _syncingRemindDate;
+
     public MainWindow()
     {
         InitializeComponent();
         _vm = new MainViewModel(App.Instance.Repo);
         DataContext = _vm;
+        // 「转为便签」等操作后，由视图模型请求导航到对应分区
+        _vm.NavigateRequested += s => NavigateTo(s);
         Loaded += OnLoaded;
     }
 
@@ -267,6 +272,13 @@ public partial class MainWindow : Window
         RefreshRecordDetail();
     }
 
+    /// <summary>剪贴板捕获回调：由 App 在捕获到新内容时调用，实时刷新剪贴板列表并保留选中。</summary>
+    public void OnClipCaptured(Clip clip)
+    {
+        _vm.ReloadClipsPreservingSelection();
+        _vm.StatusText = "新剪贴内容已收录";
+    }
+
     /// <summary>根据导航分区切换中间列表与右侧详情面板。</summary>
     private void SwitchPanels(NavSection section)
     {
@@ -296,6 +308,7 @@ public partial class MainWindow : Window
         DetailAnnotation.Visibility = Visibility.Collapsed;
         DetailClip.Visibility = section == NavSection.Clips ? Visibility.Visible : Visibility.Collapsed;
         DetailTask.Visibility = section == NavSection.Tasks ? Visibility.Visible : Visibility.Collapsed;
+        if (section == NavSection.Tasks) SyncRemindDate(_vm.SelectedTask);
         DetailEmpty.Visibility = section is NavSection.FileTree or NavSection.Search
             or NavSection.Recycle or NavSection.Settings ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -432,6 +445,7 @@ public partial class MainWindow : Window
         t.RemindAt = dt;
         t.Reminded = false;
         if (RemindTextBox != null) RemindTextBox.Text = dt?.ToString("yyyy-MM-dd HH:mm") ?? "";
+        SyncRemindDate(t);
         try { App.Instance.Repo.UpsertTask(t); } catch { }
         _vm.StatusText = dt is DateTime v ? "提醒时间：" + v.ToString("yyyy-MM-dd HH:mm") : "已清除提醒";
     }
@@ -441,6 +455,45 @@ public partial class MainWindow : Window
     {
         var t = DateTime.Today.AddHours(20);
         return t <= DateTime.Now ? t.AddDays(1) : t;
+    }
+
+    /// <summary>待办详情：把当前提醒日期同步到日期选择器（不触发写回）。</summary>
+    private void SyncRemindDate(TaskItem? t)
+    {
+        if (RemindCalendar is null) return;
+        _syncingRemindDate = true;
+        try { RemindCalendar.SelectedDate = t?.RemindAt?.Date; }
+        finally { _syncingRemindDate = false; }
+    }
+
+    /// <summary>待办详情：点击提醒时间输入框时弹出日期选择器，便于快速选择日期。</summary>
+    private void RemindTextBox_PreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (RemindPopup is null) return;
+        if (RemindPopup.IsOpen) { RemindPopup.IsOpen = false; return; }
+        SyncRemindDate(_vm.SelectedTask);
+        // 延后到本次点击完全结束后再弹出，避免弹出层被同一次鼠标单击判定为“外部点击”而立刻关闭
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (RemindPopup is not null) RemindPopup.IsOpen = true;
+        }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+    }
+
+    /// <summary>待办详情：在日期选择器中选定日期后，保留原时间（无则默认 09:00）并写回提醒时间。</summary>
+    private void RemindCalendar_SelectedDatesChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingRemindDate) return;
+        var t = _vm.SelectedTask;
+        if (t is null) return;
+        if (sender is not Calendar cal || cal.SelectedDate is not DateTime d) return;
+        var time = t.RemindAt?.TimeOfDay ?? new TimeSpan(9, 0, 0);
+        var dt = d.Date + time;
+        t.RemindAt = dt;
+        t.Reminded = false;
+        if (RemindTextBox != null) RemindTextBox.Text = dt.ToString("yyyy-MM-dd HH:mm");
+        try { App.Instance.Repo.UpsertTask(t); } catch { }
+        _vm.StatusText = "提醒时间：" + dt.ToString("yyyy-MM-dd HH:mm");
+        if (RemindPopup != null) RemindPopup.IsOpen = false;   // 选完即收起，避免遮挡
     }
 
     /// <summary>待办详情：插入本地图片，写入描述 Markdown 并即时预览。</summary>
@@ -669,7 +722,23 @@ public partial class MainWindow : Window
         if (Cat("General")) Guard("通用", () =>
         {
             Section("通用");
-            Check("开机启动", "登录 Windows 后自动运行并常驻托盘", s.StartWithWindows, v => s.StartWithWindows = v);
+            // 开机启动：勾选即时写入 HKCU Run 注册项（免管理员），取消即删除；
+            // 若注册表写入失败则回滚设置与勾选状态，避免“界面已开启、系统实际未生效”的不一致。
+            bool startupGuard = false;
+            CheckBox? cbStartup = null;
+            cbStartup = Check("开机启动", "登录 Windows 后自动运行并常驻托盘（写入 HKCU Run，免管理员）", s.StartWithWindows, v =>
+            {
+                if (startupGuard) return;
+                s.StartWithWindows = v;
+                bool ok = App.Instance.Startup?.Apply(v) ?? true;
+                if (!ok)
+                {
+                    s.StartWithWindows = !v;
+                    startupGuard = true;
+                    try { if (cbStartup != null) cbStartup.IsChecked = !v; } finally { startupGuard = false; }
+                    MessageBox.Show(this, "无法写入开机自启项，请检查系统策略或注册表权限。", "文笺 FileMemo");
+                }
+            });
             Check("关闭时最小化到托盘", "关闭主窗口后监听继续运行", s.MinimizeToTray, v => s.MinimizeToTray = v);
         });
 

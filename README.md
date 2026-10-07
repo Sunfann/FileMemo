@@ -1,4 +1,4 @@
-# 文笺 FileMemo —— 签随文件走的超级便签
+文笺 FileMemo —— 签随文件走的超级便签
 
 > 每份文件都值得一纸文笺：图文备注 · 五重指纹追踪 · 文件树 · Everything 联合搜索
 
@@ -113,6 +113,7 @@ cd scripts
 | 桌面 Widget | ✅ | 快速便签 / 待办 / 剪贴板 |
 | 统一对象模型 | ✅ | Record / Clip / Task / FileRef / Annotation / Fingerprint / Timeline / Link |
 | 本地 SQLite + 分级加密 | ✅ | DPAPI 加密敏感字段；普通便签可明文 |
+| 开机自启 + 开关 | ✅ | 设置 → 通用「开机启动」：写 HKCU `...\Run`（免管理员），带 `--autostart` 登录后静默常驻托盘；失败自动回滚开关 |
 
 图例：✅ 已实现 · ⚠️ 部分实现 · ⬜ 规划中
 
@@ -157,7 +158,7 @@ FileMemo/
     ├─ app.manifest               # Per-Monitor V2 DPI
     ├─ Models/                    # 统一对象模型 + 枚举
     ├─ Data/                      # Database（建表/FTS5）+ Repository（CRUD/搜索）
-    ├─ Services/                  # 剪贴板/指纹/热键/Everything/文件监听/Markdown/加密/设置
+    ├─ Services/                  # 剪贴板/指纹/热键/Everything/文件监听/开机自启/加密/设置
     ├─ Interop/                   # Win32 P/Invoke（热键/剪贴板/File ID/卷 GUID）
     ├─ ViewModels/                # MainViewModel + RelayCommand
     ├─ Converters/                # 值转换器
@@ -249,6 +250,39 @@ FileMemo/
 - 后台接线：`App.xaml.cs` 新增 `BuildFloatingBall / RebuildFloatingBall / CloseFloatingBall`
   与 `CollapseAllNotes / ReleaseAllNotes / MinimizeAllNotes / ToggleCollapseNotes`，
   并维护便签浮窗登记表 `_noteWindows` 供批量收纳 / 释放
+
+---
+
+## 八·补2、剪贴板与待办提醒交互优化
+
+### 剪贴板随记（交互修复与增强）
+
+- **固定 / 取消固定的即时反馈**：点击「固定/取消」后状态栏明确提示「已固定该剪贴记录」或「已取消固定」，
+  并在列表按固定状态重排后**自动恢复原选中项**，不再出现选中丢失、无法判断当前是固定还是取消的情况。
+- **「转为便签」可见可达**：转换后自动**切换到「便签 / 文件备注」分区**、选中新建的便签记录，
+  并提示「剪贴板已转为便签，已跳转到便签页」，解决此前转换成功却“在便签页看不到”的问题。
+- **剪贴板列表实时刷新**：接入剪贴板监听服务的捕获事件（`ClipCaptured`），
+  捕获到新的剪切内容后即时刷新列表、保留当前选中，并提示「新剪贴内容已收录」，无需手动刷新。
+- **固定项标识**：已固定的剪贴记录在其列表项**右侧显示图钉图标**（主题色、加粗），一眼可辨；
+  右侧「剪贴板详情」标题旁同步显示当前项的固定状态图标。
+
+> 相关实现：`Services/ClipboardMonitorService.cs`（`ClipCaptured` 事件）、
+> `ViewModels/MainViewModel.cs`（`PinClip` / `ConvertClipToNote` / `ReloadClipsPreservingSelection` / `NavigateRequested`）、
+> `Views/MainWindow.xaml(.cs)`（列表项模板、详情区、导航联动）、`App.xaml.cs`（事件订阅）。
+
+### 待办提醒时间：点击输入框弹出日历
+
+「待办详情」中的**提醒时间**输入框支持**点击即弹出日历**快速选择日期：
+
+- 点击输入框，在其附近（鼠标位置）浮出**日历浮层**，点选日期即可；
+- 选中日期后**保留原有时间**（未设置过时间则默认 `09:00`），回填为 `yyyy-MM-dd HH:mm` 并写库；
+- 选完自动收起；再次点击输入框可收起；
+- 日历**字号（22）与配色跟随界面**（圆角卡片 + 主题底色 + 细边框 + 柔和阴影），不突兀。
+
+> 防误操作：日历浮层为“粘性”弹出（选中前不被外部点击关闭），确保点选日期能真正写入；
+> 仍保留原有「+15 分钟 / +1 小时 / 今晚 20:00 / 明天 09:00 / 清除」快捷预设。
+> 相关实现：`Views/MainWindow.xaml`（`RemindPopup` + `RemindCalendar`）、
+> `Views/MainWindow.xaml.cs`（`RemindCalendar_SelectedDatesChanged` / `RemindTextBox_PreviewMouseLeftButtonDown` / `SyncRemindDate`）。
 
 ---
 
