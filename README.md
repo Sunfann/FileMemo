@@ -24,8 +24,6 @@
 **桌面悬浮球**（主球贴图 + 磁贴图标）
 
 <p align="center">
-  <img src="src/FileMemo.App/Assets/ball.png" width="150" alt="悬浮球主球贴图"/>
-  &nbsp;&nbsp;&nbsp;
   <img src="src/FileMemo.App/Assets/ball_tile_icon.png" width="90" alt="悬浮球磁贴图标"/>
 </p>
 
